@@ -11,6 +11,8 @@ export default function ProfileComponent() {
     const [photoUrl, setPhotoUrl] = useState('');
     const [feedback, setFeedback] = useState('');
     const [feedbackType, setFeedbackType] = useState(''); // 'success' or 'error'
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isConnectingService, setIsConnectingService] = useState(false);
 
     // Update states once session is loaded
     useEffect(() => {
@@ -50,8 +52,17 @@ export default function ProfileComponent() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        setIsSubmitting(true);
 
         try {
+            // Validation
+            if (!pseudo.trim()) {
+                setFeedbackType('error');
+                setFeedback('Le pseudo ne peut pas être vide');
+                setIsSubmitting(false);
+                return;
+            }
+
             const res = await fetch('/api/profile/update', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -66,7 +77,7 @@ export default function ProfileComponent() {
                     setFeedback(`${data.error}. Suggestion: ${data.suggestion}`);
                     setPseudo(data.suggestion);
                 } else {
-                    setFeedback(data.error);
+                    setFeedback(data.error || 'Une erreur est survenue');
                 }
             } else {
                 setFeedbackType('success');
@@ -78,13 +89,17 @@ export default function ProfileComponent() {
                 }, 1500);
             }
         } catch (error) {
+            console.error('Profile update error:', error);
             setFeedbackType('error');
             setFeedback('Erreur lors de la mise à jour du profil');
-            console.error('Profile update error:', error);
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
     const connectService = (provider) => {
+        setIsConnectingService(true);
+
         // Définir les options pour signIn
         const options = {
             redirect: true,
@@ -112,13 +127,14 @@ export default function ProfileComponent() {
                         router.reload();
                     }, 1500);
                 } else {
+                    const data = await res.json();
                     setFeedbackType('error');
-                    setFeedback(`Erreur lors de la déconnexion de ${provider}`);
+                    setFeedback(data.error || `Erreur lors de la déconnexion de ${provider}`);
                 }
             } catch (error) {
+                console.error('Service unlink error:', error);
                 setFeedbackType('error');
                 setFeedback(`Erreur lors de la déconnexion de ${provider}`);
-                console.error('Service unlink error:', error);
             }
         }
     };
@@ -164,6 +180,7 @@ export default function ProfileComponent() {
                         onChange={(e) => setPseudo(e.target.value)}
                         required
                         className="form-input"
+                        disabled={isSubmitting}
                     />
                 </div>
 
@@ -175,12 +192,17 @@ export default function ProfileComponent() {
                         accept="image/*"
                         onChange={handlePhotoUpload}
                         className="form-input"
+                        disabled={isSubmitting}
                     />
                     <small className="form-help">Format recommandé: JPG ou PNG, carré</small>
                 </div>
 
-                <button type="submit" className="btn-update">
-                    Mettre à jour le profil
+                <button
+                    type="submit"
+                    className="btn-update"
+                    disabled={isSubmitting}
+                >
+                    {isSubmitting ? 'Mise à jour...' : 'Mettre à jour le profil'}
                 </button>
             </form>
 
@@ -200,6 +222,7 @@ export default function ProfileComponent() {
                             <button
                                 className="btn-disconnect"
                                 onClick={() => unlinkService('spotify')}
+                                disabled={isConnectingService}
                             >
                                 Délier Spotify
                             </button>
@@ -207,8 +230,9 @@ export default function ProfileComponent() {
                             <button
                                 className="btn-connect"
                                 onClick={() => connectService('spotify')}
+                                disabled={isConnectingService}
                             >
-                                Connecter Spotify
+                                {isConnectingService ? 'Connexion...' : 'Connecter Spotify'}
                             </button>
                         )}
                     </div>
@@ -222,6 +246,7 @@ export default function ProfileComponent() {
                             <button
                                 className="btn-disconnect"
                                 onClick={() => unlinkService('deezer')}
+                                disabled={isConnectingService}
                             >
                                 Délier Deezer
                             </button>
@@ -229,8 +254,9 @@ export default function ProfileComponent() {
                             <button
                                 className="btn-connect"
                                 onClick={() => connectService('deezer')}
+                                disabled={isConnectingService}
                             >
-                                Connecter Deezer
+                                {isConnectingService ? 'Connexion...' : 'Connecter Deezer'}
                             </button>
                         )}
                     </div>

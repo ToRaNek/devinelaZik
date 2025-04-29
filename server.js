@@ -209,17 +209,20 @@ const getSampleQuestions = (count) => {
 app.prepare().then(() => {
   const server = express();
   const httpServer = http.createServer(server);
-  const io = new Server(httpServer);
+  const io = new Server(httpServer, {
+    cors: {
+      origin: '*',
+      methods: ['GET', 'POST']
+    },
+    pingTimeout: 60000,
+    pingInterval: 25000,
+  });
 
-  // CORRECTION: Middleware doit être défini AVANT les gestionnaires de connexion
+  // Middleware pour les logs et la gestion des sessions
   io.use((socket, next) => {
-    const userId = socket.handshake.auth.userId;
-    if (userId) {
-      socket.userId = userId;
-      next();
-    } else {
-      next();
-    }
+    console.log('Socket middleware executed with auth:', socket.handshake.auth);
+    // We'll set userId later in the joinRoom event
+    next();
   });
 
   // Socket.IO logic
@@ -230,6 +233,9 @@ app.prepare().then(() => {
     socket.on('joinRoom', async ({roomCode, user}) => {
       try {
         console.log(`User ${user.id} joining room ${roomCode}`);
+
+        // Store user ID on socket instance for this session
+        socket.userId = user.id;
 
         // Joindre la salle Socket.IO
         socket.join(roomCode);
@@ -295,7 +301,7 @@ app.prepare().then(() => {
             ready: false,
             user: {
               id: user.id,
-              pseudo: user.pseudo,
+              pseudo: user.pseudo || user.name,
               image: user.image
             }
           });
@@ -305,7 +311,7 @@ app.prepare().then(() => {
             userId: user.id,
             user: {
               id: user.id,
-              pseudo: user.pseudo,
+              pseudo: user.pseudo || user.name,
               image: user.image
             },
             score: 0,
@@ -313,10 +319,10 @@ app.prepare().then(() => {
           });
         }
 
-        // Envoyer les données de la salle à l'utilisateur qui vient de rejoindre
+        // Always send the current room data back to the connecting user
         socket.emit('roomData', activeRoom);
 
-        // Ajouter un message système
+        // Ajouter un message système - use io.to to send to all including sender
         io.to(roomCode).emit('message', {
           system: true,
           message: `${user.pseudo || 'Un joueur'} a rejoint la partie!`
@@ -329,13 +335,18 @@ app.prepare().then(() => {
 
     // Quitter une salle
     socket.on('leaveRoom', (roomCode) => {
-      if (!activeRooms.has(roomCode)) return;
+      console.log(`User ${socket.userId} leaving room ${roomCode}`);
+      if (!activeRooms.has(roomCode)) {
+        console.log(`Room ${roomCode} not found, cannot leave`);
+        return;
+      }
 
       const activeRoom = activeRooms.get(roomCode);
       const playerIndex = activeRoom.players.findIndex(p => p.userId === socket.userId);
 
       if (playerIndex !== -1) {
         const player = activeRoom.players[playerIndex];
+        console.log(`Player ${player.user?.pseudo || player.userId} found, removing from room`);
 
         // Supprimer le joueur de la salle active
         activeRoom.players.splice(playerIndex, 1);
@@ -351,6 +362,7 @@ app.prepare().then(() => {
 
         // Si plus aucun joueur, supprimer la salle
         if (activeRoom.players.length === 0) {
+          console.log(`No players left in room ${roomCode}, removing room`);
           activeRooms.delete(roomCode);
 
           // Si un jeu est en cours, le supprimer aussi
@@ -361,6 +373,7 @@ app.prepare().then(() => {
         }
         // Si l'hôte quitte, transférer l'hôte au joueur suivant
         else if (player.userId === activeRoom.hostId && activeRoom.players.length > 0) {
+          console.log(`Host has left, transferring host role to ${activeRoom.players[0].user?.pseudo || activeRoom.players[0].userId}`);
           activeRoom.hostId = activeRoom.players[0].userId;
 
           // Informer les joueurs du changement d'hôte
@@ -372,6 +385,8 @@ app.prepare().then(() => {
             message: `${activeRoom.players[0].user?.pseudo || 'Un joueur'} est maintenant l'hôte.`
           });
         }
+      } else {
+        console.log(`Player ${socket.userId} not found in room ${roomCode}`);
       }
 
       // Quitter la salle Socket.IO
@@ -380,6 +395,7 @@ app.prepare().then(() => {
 
     // Définir l'état "prêt" du joueur
     socket.on('setReady', ({roomCode, userId, ready}) => {
+      console.log(`User ${userId} setting ready state to ${ready} in room ${roomCode}`);
       if (!activeRooms.has(roomCode)) return;
 
       const activeRoom = activeRooms.get(roomCode);
@@ -395,12 +411,18 @@ app.prepare().then(() => {
 
     // Démarrer une partie
     socket.on('startGame', ({roomCode, rounds, source}) => {
-      if (!activeRooms.has(roomCode)) return;
+      console.log(`Starting game in room ${roomCode} with ${rounds} rounds using ${source}`);
+      if (!activeRooms.has(roomCode)) {
+        console.log(`Room ${roomCode} not found, cannot start game`);
+        socket.emit('error', {message: 'Room not found'});
+        return;
+      }
 
       const activeRoom = activeRooms.get(roomCode);
 
       // Vérifier que l'émetteur est bien l'hôte
       if (socket.userId !== activeRoom.hostId) {
+        console.log(`User ${socket.userId} tried to start game but is not the host (${activeRoom.hostId})`);
         socket.emit('error', {message: 'Only the host can start the game'});
         return;
       }
@@ -414,11 +436,14 @@ app.prepare().then(() => {
         p.score = 0;
       });
 
+      // Générer les questions
+      const gameQuestions = getSampleQuestions(gameRounds);
+
       // Créer le jeu actif
       activeGames.set(roomCode, {
         currentRound: 0,
         totalRounds: gameRounds,
-        questions: getSampleQuestions(gameRounds),
+        questions: gameQuestions,
         correctAnswers: new Set(),
         timer: null,
         source: source || 'sample' // 'spotify', 'deezer' ou 'sample'
@@ -427,22 +452,29 @@ app.prepare().then(() => {
       // Informer tous les joueurs que la partie commence
       io.to(roomCode).emit('gameStarted', {rounds: gameRounds});
 
-      // Lancer le premier round
-      startNextRound(roomCode);
+      // Lancer le premier round après un court délai
+      setTimeout(() => {
+        startNextRound(roomCode);
+      }, 2000);
     });
 
     // Fonction pour démarrer le round suivant
     function startNextRound(roomCode) {
-      if (!activeRooms.has(roomCode) || !activeGames.has(roomCode)) return;
+      if (!activeRooms.has(roomCode) || !activeGames.has(roomCode)) {
+        console.log(`Cannot start next round: room ${roomCode} or game not found`);
+        return;
+      }
 
       const activeRoom = activeRooms.get(roomCode);
       const activeGame = activeGames.get(roomCode);
 
       // Incrémenter le compteur de rounds
       activeGame.currentRound++;
+      console.log(`Starting round ${activeGame.currentRound}/${activeGame.totalRounds} in room ${roomCode}`);
 
       // Vérifier si la partie est terminée
       if (activeGame.currentRound > activeGame.totalRounds) {
+        console.log(`All rounds completed in room ${roomCode}, ending game`);
         endGame(roomCode);
         return;
       }
@@ -453,20 +485,24 @@ app.prepare().then(() => {
       // Réinitialiser les réponses correctes pour ce round
       activeGame.correctAnswers = new Set();
 
-      // Envoyer la nouvelle question à tous les joueurs
-      io.to(roomCode).emit('newQuestion', {
+      // Préparer la question à envoyer
+      const roundQuestion = {
         ...question,
         id: `${question.id}-${activeGame.currentRound}`, // ID unique pour éviter les doublons
         round: activeGame.currentRound,
         totalRounds: activeGame.totalRounds
-      });
+      };
 
-      // CORRECTION: Ajout de l'initialisation du temps de début de la question
+      // Envoyer la nouvelle question à tous les joueurs
+      io.to(roomCode).emit('newQuestion', roundQuestion);
+
+      // Initialiser le temps de début de la question
       activeGame.questionStartTime = Date.now();
 
       // Démarrer le timer pour ce round
       activeGame.timer = setTimeout(() => {
         // Temps écoulé pour cette question
+        console.log(`Time's up for question in round ${activeGame.currentRound} in room ${roomCode}`);
         io.to(roomCode).emit('questionTimeout', {
           correctAnswer: question.answer,
           round: activeGame.currentRound,
@@ -500,10 +536,15 @@ app.prepare().then(() => {
 
     // Fonction pour terminer une partie
     function endGame(roomCode) {
-      if (!activeRooms.has(roomCode) || !activeGames.has(roomCode)) return;
+      if (!activeRooms.has(roomCode) || !activeGames.has(roomCode)) {
+        console.log(`Cannot end game: room ${roomCode} or game not found`);
+        return;
+      }
 
       const activeRoom = activeRooms.get(roomCode);
       const activeGame = activeGames.get(roomCode);
+
+      console.log(`Ending game in room ${roomCode}`);
 
       // Mettre à jour le statut de la salle
       activeRoom.status = 'finished';
@@ -537,6 +578,7 @@ app.prepare().then(() => {
     async function saveFinalScores(roomCode, scores) {
       try {
         const activeRoom = activeRooms.get(roomCode);
+        console.log(`Saving final scores for room ${roomCode}`);
 
         // Mise à jour des scores dans la base de données
         for (const player of scores) {
@@ -550,6 +592,7 @@ app.prepare().then(() => {
             }
           });
         }
+        console.log(`Scores saved for ${scores.length} players`);
       } catch (error) {
         console.error('Error saving scores:', error);
       }
@@ -557,13 +600,18 @@ app.prepare().then(() => {
 
     // Soumettre une réponse
     socket.on('submitAnswer', ({roomCode, userId, answer, questionId}) => {
-      if (!activeRooms.has(roomCode) || !activeGames.has(roomCode)) return;
+      console.log(`User ${userId} submitted answer "${answer}" in room ${roomCode}`);
+      if (!activeRooms.has(roomCode) || !activeGames.has(roomCode)) {
+        console.log(`Room ${roomCode} or game not found for answer submission`);
+        return;
+      }
 
       const activeRoom = activeRooms.get(roomCode);
       const activeGame = activeGames.get(roomCode);
 
       // Vérifier si le joueur a déjà répondu correctement
       if (activeGame.correctAnswers.has(userId)) {
+        console.log(`User ${userId} already answered correctly`);
         return;
       }
 
@@ -572,6 +620,7 @@ app.prepare().then(() => {
 
       // Vérifier si la réponse est correcte
       const isCorrect = checkAnswer(answer, currentQuestion.answer);
+      console.log(`Answer is ${isCorrect ? 'correct' : 'incorrect'}, correct answer: ${currentQuestion.answer}`);
 
       if (isCorrect) {
         // Marquer que ce joueur a répondu correctement
@@ -579,9 +628,11 @@ app.prepare().then(() => {
 
         // Calculer les points (plus vite = plus de points)
         const timeLeft = QUESTION_DURATION -
-            ((Date.now() - activeGame.questionStartTime) / 1000);
+            Math.min(QUESTION_DURATION, Math.floor((Date.now() - activeGame.questionStartTime) / 1000));
         const timeBonus = Math.max(0, Math.floor(timeLeft / 5)); // 1 point tous les 5 secondes restantes
         const points = 10 + timeBonus; // Score de base + bonus de temps
+
+        console.log(`User ${userId} awarded ${points} points (${timeBonus} time bonus)`);
 
         // Mettre à jour le score du joueur
         const player = activeRoom.players.find(p => p.userId === userId);
@@ -611,6 +662,7 @@ app.prepare().then(() => {
 
         // Si tous les joueurs ont répondu correctement, passer au round suivant
         if (activeGame.correctAnswers.size === activeRoom.players.length) {
+          console.log(`All players answered correctly, ending round early`);
           clearTimeout(activeGame.timer);
 
           // Envoyer les scores à la fin du round
@@ -646,32 +698,45 @@ app.prepare().then(() => {
 
     // Envoyer un message dans le chat
     socket.on('sendMessage', ({roomCode, user, message}) => {
-      if (!activeRooms.has(roomCode)) return;
+      console.log(`Message received from ${user.id} in room ${roomCode}: ${message}`);
+
+      if (!activeRooms.has(roomCode)) {
+        console.error(`Room ${roomCode} not found for message`);
+        return;
+      }
 
       // Vérifier que le message n'est pas vide
-      if (!message || !message.trim()) return;
+      if (!message || !message.trim()) {
+        console.warn('Empty message ignored');
+        return;
+      }
 
-      // Envoyer le message à tous les joueurs dans la salle
-      io.to(roomCode).emit('message', {
+      const messageObject = {
         user: {
           id: user.id,
-          pseudo: user.pseudo,
+          pseudo: user.pseudo || user.name,
           image: user.image
         },
         message: message.trim(),
         timestamp: Date.now()
-      });
+      };
+
+      console.log(`Sending message to room ${roomCode}: ${JSON.stringify(messageObject)}`);
+
+      // Envoyer le message à tous les joueurs dans la salle
+      io.to(roomCode).emit('message', messageObject);
     });
 
     // Déconnexion
     socket.on('disconnect', () => {
-      console.log('Client disconnected', socket.id);
+      console.log('Client disconnected', socket.id, 'userId:', socket.userId);
 
       // Trouver toutes les salles où ce socket est présent
       for (const [roomCode, room] of activeRooms.entries()) {
-        const playerIndex = room.players.findIndex(p => p.socketId === socket.id);
+        const playerIndex = room.players.findIndex(p => p.userId === socket.userId);
 
         if (playerIndex !== -1) {
+          console.log(`Found player in room ${roomCode}, handling disconnect`);
           // Quitter cette salle
           const player = room.players[playerIndex];
 
@@ -679,7 +744,7 @@ app.prepare().then(() => {
           room.players.splice(playerIndex, 1);
 
           // Informer les autres joueurs
-          socket.to(roomCode).emit('playerLeft', player.userId);
+          io.to(roomCode).emit('playerLeft', player.userId);
 
           // Ajouter un message système
           io.to(roomCode).emit('message', {
@@ -689,6 +754,7 @@ app.prepare().then(() => {
 
           // Si plus aucun joueur, supprimer la salle
           if (room.players.length === 0) {
+            console.log(`No players left in room ${roomCode}, removing room`);
             activeRooms.delete(roomCode);
 
             // Si un jeu est en cours, le supprimer aussi
@@ -699,6 +765,7 @@ app.prepare().then(() => {
           }
           // Si l'hôte quitte, transférer l'hôte au joueur suivant
           else if (player.userId === room.hostId && room.players.length > 0) {
+            console.log(`Host has left, transferring host role to ${room.players[0].user?.pseudo || room.players[0].userId}`);
             room.hostId = room.players[0].userId;
 
             // Informer les joueurs du changement d'hôte
@@ -724,5 +791,6 @@ app.prepare().then(() => {
   httpServer.listen(3000, (err) => {
     if (err) throw err;
     console.log('> Ready on http://localhost:3000');
+    console.log('> Socket.IO server is running');
   });
 });

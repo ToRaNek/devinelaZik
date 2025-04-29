@@ -667,6 +667,546 @@ body {
   max-width: 360px;
 }
 
+/* Game Interface Styles */
+
+/* Layout */
+.game-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.game-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.game-header h1 {
+  margin: 0;
+  font-size: 1.75rem;
+  color: #007bff;
+}
+
+.room-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.game-layout {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 1.5rem;
+}
+
+/* Players Sidebar */
+.players-sidebar {
+  background: white;
+  border-radius: 8px;
+  padding: 1.25rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.players-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.player-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.player-item:last-child {
+  border-bottom: none;
+}
+
+.player-avatar {
+  flex-shrink: 0;
+}
+
+.player-avatar img {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.default-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+  color: white;
+  font-size: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.player-info {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.player-name {
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.host-badge, .you-badge {
+  font-size: 0.75rem;
+  padding: 0.125rem 0.375rem;
+  border-radius: 999px;
+  font-weight: 400;
+}
+
+.host-badge {
+  background: #ffc107;
+  color: #212529;
+}
+
+.you-badge {
+  background: #007bff;
+  color: white;
+}
+
+.player-score {
+  font-size: 0.875rem;
+  color: #6c757d;
+}
+
+.current-player {
+  background: #f8f9fa;
+  border-radius: 6px;
+}
+
+.host-controls {
+  margin-top: 1.5rem;
+  text-align: center;
+}
+
+.start-game-btn {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.waiting-message {
+  text-align: center;
+  color: #6c757d;
+  font-size: 0.875rem;
+}
+
+/* Game Main Content */
+.game-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.waiting-screen, .game-finished {
+  background: white;
+  border-radius: 8px;
+  padding: 2rem;
+  text-align: center;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.room-share {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.room-code {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.25rem;
+  background: #f8f9fa;
+  padding: 1rem 2rem;
+  border-radius: 8px;
+  border: 2px dashed #dee2e6;
+}
+
+.connection-status {
+  margin-top: 1rem;
+  padding: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.status-connected {
+  color: #28a745;
+}
+
+.status-disconnected {
+  color: #dc3545;
+}
+
+/* Question Container */
+.question-container {
+  background: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.question-header {
+  margin-bottom: 1.5rem;
+}
+
+.question-header h2 {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+  font-size: 1.5rem;
+  color: #333;
+}
+
+.timer-bar {
+  height: 6px;
+  background: #e9ecef;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.timer-progress {
+  height: 100%;
+  background: #28a745;
+  border-radius: 999px;
+  transition: width 1s linear;
+}
+
+.timer-critical .timer-progress {
+  background: #dc3545;
+}
+
+.media-container {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.audio-player {
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+}
+
+.audio-player audio {
+  width: 100%;
+  margin-bottom: 1rem;
+}
+
+.hint {
+  font-style: italic;
+  color: #6c757d;
+}
+
+.album-cover {
+  text-align: center;
+}
+
+.album-cover img {
+  max-width: 250px;
+  height: auto;
+  border-radius: 8px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  margin-bottom: 1rem;
+}
+
+.answer-form {
+  margin-top: 1.5rem;
+}
+
+.answer-input-group {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.answer-input {
+  flex-grow: 1;
+  padding: 0.75rem 1rem;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.submit-answer {
+  padding: 0.75rem 1.5rem;
+}
+
+.answer-feedback {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.answer-feedback.correct {
+  background: #d4edda;
+  color: #155724;
+}
+
+.answer-feedback.incorrect {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.answer-feedback.timeout {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.answer-correct .answer-input {
+  border-color: #28a745;
+  background-color: #d4edda;
+}
+
+.answer-incorrect .answer-input {
+  border-color: #dc3545;
+  background-color: #f8d7da;
+}
+
+.answer-timeout .answer-input {
+  border-color: #ffc107;
+  background-color: #fff3cd;
+}
+
+/* Chat Container */
+.chat-container {
+  background: white;
+  border-radius: 8px;
+  padding: 1.25rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+  height: 300px;
+}
+
+.chat-container h3 {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+  font-size: 1.25rem;
+}
+
+.messages-container {
+  flex-grow: 1;
+  overflow-y: auto;
+  margin-bottom: 1rem;
+  padding: 0.5rem;
+}
+
+.message {
+  margin-bottom: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: #f8f9fa;
+  max-width: 90%;
+}
+
+.message-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.message-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.message-author {
+  font-weight: 500;
+  font-size: 0.875rem;
+}
+
+.message-content {
+  word-break: break-word;
+}
+
+.system-message {
+  background: #e9ecef;
+  color: #495057;
+  font-style: italic;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  text-align: center;
+  max-width: 100%;
+}
+
+.own-message {
+  background: #e3f2fd;
+  margin-left: auto;
+}
+
+.chat-form {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.chat-input {
+  flex-grow: 1;
+  padding: 0.75rem 1rem;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.send-button {
+  padding: 0.75rem 1.25rem;
+}
+
+/* Game Status */
+.game-status {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #dee2e6;
+}
+
+.round-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.round-counter {
+  font-weight: 500;
+}
+
+.timer {
+  font-weight: 700;
+  padding: 0.25rem 0.75rem;
+  background: #28a745;
+  color: white;
+  border-radius: 999px;
+}
+
+.timer-warning {
+  background: #dc3545;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Game Over */
+.game-over {
+  margin-top: 1.5rem;
+}
+
+.final-leaderboard {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-top: 1rem;
+}
+
+.leaderboard-list {
+  margin: 1rem 0;
+  padding-left: 2rem;
+}
+
+.leaderboard-item {
+  padding: 0.5rem 0;
+  display: flex;
+  align-items: center;
+}
+
+.leaderboard-item .position {
+  font-weight: 700;
+  margin-right: 1rem;
+}
+
+.leaderboard-item .player-name {
+  flex-grow: 1;
+}
+
+.leaderboard-item .final-score {
+  font-weight: 700;
+}
+
+.new-game-btn, .back-lobby-btn {
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+/* Buttons */
+.btn {
+  display: inline-block;
+  font-weight: 400;
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: middle;
+  user-select: none;
+  border: 1px solid transparent;
+  padding: 0.375rem 0.75rem;
+  font-size: 1rem;
+  line-height: 1.5;
+  border-radius: 0.25rem;
+  transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  color: #fff;
+  background-color: #007bff;
+  border-color: #007bff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #0069d9;
+  border-color: #0062cc;
+}
+
+.btn-secondary {
+  color: #fff;
+  background-color: #6c757d;
+  border-color: #6c757d;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: #5a6268;
+  border-color: #545b62;
+}
+
+.btn-danger {
+  color: #fff;
+  background-color: #dc3545;
+  border-color: #dc3545;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background-color: #c82333;
+  border-color: #bd2130;
+}
 
 /* Responsive adjustments */
 @media (max-width: 768px) {

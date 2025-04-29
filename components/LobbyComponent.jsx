@@ -20,7 +20,13 @@ export default function LobbyComponent() {
       setIsCreatingRoom(true);
       setError(null);
 
-      const res = await fetch('/api/rooms/create', { method: 'POST' });
+      const res = await fetch('/api/rooms/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
       const data = await res.json();
 
       if (res.ok) {
@@ -29,8 +35,8 @@ export default function LobbyComponent() {
         setError(data.error || 'Erreur lors de la création de la partie');
       }
     } catch (err) {
-      setError('Erreur de serveur');
-      console.error(err);
+      console.error('Error creating room:', err);
+      setError('Erreur de serveur. Veuillez réessayer.');
     } finally {
       setIsCreatingRoom(false);
     }
@@ -42,7 +48,14 @@ export default function LobbyComponent() {
       return;
     }
 
-    router.push(`/partie/${joinCode.trim().toUpperCase()}`);
+    const formattedCode = joinCode.trim().toUpperCase();
+    // Validate code format (6 alphanumeric characters)
+    if (!/^[A-Z0-9]{6}$/.test(formattedCode)) {
+      setError('Le code de partie doit contenir 6 caractères');
+      return;
+    }
+
+    router.push(`/partie/${formattedCode}`);
   };
 
   // Si l'utilisateur n'a pas lié un service de musique, afficher un avertissement
