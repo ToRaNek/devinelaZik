@@ -3,6 +3,8 @@ import { SessionProvider } from "next-auth/react";
 import { SocketProvider } from "../lib/socketContext";
 import Header from "../components/Header";
 import "../styles/globals.css";
+import "../styles/header.css"; // Import header styles
+import "../styles/profile.css"; // Import profile styles
 
 export default function MyApp({ Component, pageProps }) {
     return (

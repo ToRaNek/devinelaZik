@@ -1,29 +1,86 @@
 // components/Header.jsx
 import Link from 'next/link';
-import { useSession } from 'next-auth/react';
+import { useSession, signOut } from 'next-auth/react';
+import { useState, useRef, useEffect } from 'react';
 
 export default function Header() {
     const { data: session } = useSession();
+    const [menuOpen, setMenuOpen] = useState(false);
+    const menuRef = useRef(null);
+
+    // Close menu when clicking outside
+    useEffect(() => {
+        function handleClickOutside(event) {
+            if (menuRef.current && !menuRef.current.contains(event.target)) {
+                setMenuOpen(false);
+            }
+        }
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [menuRef]);
 
     if (!session) return null;
+
+    const handleSignOut = () => {
+        signOut({ callbackUrl: '/' });
+    };
+
+    // Check if user has connected a music service
+    const hasMusicService = session.user.spotify || session.user.deezer;
 
     return (
         <header className="app-header">
             <div className="header-left">
-                <Link href="/lobby" className="play-button">
-                    Jouer
+                <Link href="/" className="brand-logo">
+                    Devine la Zik
                 </Link>
+
+                <nav className="main-nav">
+                    <Link href="/lobby" className={`nav-link ${!hasMusicService ? 'disabled' : ''}`}>
+                        Jouer
+                    </Link>
+                </nav>
             </div>
+
             <div className="header-right">
-                <Link href="/profile" className="profile-link">
-                    {session.user.image ? (
-                        <img src={session.user.image} alt="Profile" className="profile-icon" />
-                    ) : (
-                        <div className="profile-icon-placeholder">
-                            {session.user.pseudo?.[0]?.toUpperCase() || 'U'}
+                <div className="profile-menu" ref={menuRef}>
+                    <button
+                        className="profile-button"
+                        onClick={() => setMenuOpen(!menuOpen)}
+                        aria-expanded={menuOpen}
+                        aria-label="Menu profil"
+                    >
+                        {session.user.image ? (
+                            <img src={session.user.image} alt="Profile" className="profile-icon" />
+                        ) : (
+                            <div className="profile-icon-placeholder">
+                                {session.user.pseudo?.[0]?.toUpperCase() || 'U'}
+                            </div>
+                        )}
+                        <span className="profile-name">{session.user.pseudo || session.user.name}</span>
+                    </button>
+
+                    {menuOpen && (
+                        <div className="profile-dropdown">
+                            <Link href="/profile" className="dropdown-item">
+                                Mon Profil
+                            </Link>
+
+                            {!hasMusicService && (
+                                <div className="dropdown-alert">
+                                    <span>❗</span> Connectez un service de musique pour jouer
+                                </div>
+                            )}
+
+                            <button onClick={handleSignOut} className="dropdown-item logout">
+                                Se déconnecter
+                            </button>
                         </div>
                     )}
-                </Link>
+                </div>
             </div>
         </header>
     );

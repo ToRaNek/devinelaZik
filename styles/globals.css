@@ -667,6 +667,7 @@ body {
   max-width: 360px;
 }
 
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .hero-section {
