@@ -651,6 +651,22 @@ body {
   margin-bottom: 1rem;
 }
 
+
+
+/* Auth error message styling */
+.auth-error {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  color: #fff;
+  font-size: 0.9rem;
+  border-left: 4px solid #ff3e3e;
+  backdrop-filter: blur(10px);
+  width: 100%;
+  max-width: 360px;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .hero-section {
@@ -672,3 +688,4 @@ body {
     text-align: center;
   }
 }
+

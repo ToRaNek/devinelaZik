@@ -9,14 +9,20 @@ export default function Home() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
 
+  // In the useEffect
   useEffect(() => {
     if (status === 'authenticated') {
-      // Si l'utilisateur est déjà connecté, rediriger vers le lobby
-      router.push('/lobby');
+      // Check if user has a pseudo, if not redirect to profile
+      if (!session.user.pseudo) {
+        router.push('/profile');
+      } else {
+        // Otherwise redirect to lobby
+        router.push('/lobby');
+      }
     } else if (status !== 'loading') {
       setLoading(false);
     }
-  }, [status, router]);
+  }, [status, router, session]);
 
   const handleSignIn = (provider) => {
     signIn(provider);
