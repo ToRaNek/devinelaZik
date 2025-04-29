@@ -7,8 +7,24 @@ import SpotifyProvider from "next-auth/providers/spotify";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import prisma from "../../../lib/prisma";
 
+// Create a custom adapter that extends the PrismaAdapter
+const customAdapter = (p) => {
+  return {
+    ...PrismaAdapter(p),
+    createUser: (data) => {
+      return p.user.create({
+        data: {
+          ...data,
+          // Generate a unique pseudo from the email or name
+          pseudo: `user_${Date.now().toString().slice(-6)}`,
+        },
+      });
+    },
+  };
+};
+
 export default NextAuth({
-  adapter: PrismaAdapter(prisma),
+  adapter: customAdapter(prisma),
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID || "",
@@ -26,7 +42,7 @@ export default NextAuth({
       clientId: process.env.DEEZER_CLIENT_ID || "",
       clientSecret: process.env.DEEZER_CLIENT_SECRET || "",
     }),
-    // … ajoutez d’autres providers si besoin*/
+    // … ajoutez d'autres providers si besoin*/
   ],
   callbacks: {
     async session({ session, user }) {
@@ -39,4 +55,15 @@ export default NextAuth({
       return session;
     },
   },
+  events: {
+    async signIn({ user, account, profile }) {
+      // Check if we need to update the user with a name
+      if (profile && user.name === user.email) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { name: profile.name || profile.username || user.email }
+        });
+      }
+    }
+  }
 });
