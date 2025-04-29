@@ -1,4 +1,5 @@
-// pages/apinext-auth/next";
+// pages/api/profile/update.js
+import { getServerSession } from "next-auth/next";
 import { authOptions } from "../auth/[...nextauth]";
 import prisma from "../../../lib/prisma";
 
@@ -13,7 +14,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { pseudo } = req.body;
+    const { pseudo, photoUrl } = req.body;
 
     // Check if pseudo is already taken
     const existingUser = await prisma.user.findUnique({
@@ -29,10 +30,18 @@ export default async function handler(req, res) {
       });
     }
 
+    // Update user data
+    const updateData = { pseudo };
+
+    // Add photo URL if provided
+    if (photoUrl) {
+      updateData.image = photoUrl;
+    }
+
     // Update user
     await prisma.user.update({
       where: { id: session.user.id },
-      data: { pseudo }
+      data: updateData
     });
 
     return res.status(200).json({ success: true });
