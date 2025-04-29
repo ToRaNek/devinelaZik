@@ -85,7 +85,13 @@ export default function ProfileComponent() {
     };
 
     const connectService = (provider) => {
-        signIn(provider, { callbackUrl: '/profile' });
+        // Définir les options pour signIn
+        const options = {
+            redirect: true,
+            callbackUrl: `${window.location.origin}/profile`
+        };
+
+        signIn(provider, options);
     };
 
     const unlinkService = async (provider) => {

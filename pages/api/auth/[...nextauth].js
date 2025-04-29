@@ -2,6 +2,7 @@
 import NextAuth from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import DiscordProvider from "next-auth/providers/discord";
+import SpotifyProvider from "next-auth/providers/spotify";
 import prisma from "../../../lib/prisma";
 import { CustomPrismaAdapter } from "../../../lib/customPrismaAdapter";
 
@@ -16,6 +17,16 @@ export const authOptions = {
       clientId: process.env.DISCORD_CLIENT_ID,
       clientSecret: process.env.DISCORD_CLIENT_SECRET,
     }),
+    SpotifyProvider({
+      clientId: process.env.SPOTIFY_CLIENT_ID,
+      clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
+      authorization: {
+        params: {
+          scope: "user-read-email user-top-read user-read-private"
+        }
+      }
+    }),
+    // Vous pouvez ajouter le fournisseur Deezer ici si nécessaire
   ],
   callbacks: {
     async session({ session, user }) {
