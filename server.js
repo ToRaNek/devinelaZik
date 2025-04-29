@@ -211,6 +211,17 @@ app.prepare().then(() => {
   const httpServer = http.createServer(server);
   const io = new Server(httpServer);
 
+  // CORRECTION: Middleware doit être défini AVANT les gestionnaires de connexion
+  io.use((socket, next) => {
+    const userId = socket.handshake.auth.userId;
+    if (userId) {
+      socket.userId = userId;
+      next();
+    } else {
+      next();
+    }
+  });
+
   // Socket.IO logic
   io.on('connection', (socket) => {
     console.log('New client connected', socket.id);
@@ -449,6 +460,9 @@ app.prepare().then(() => {
         round: activeGame.currentRound,
         totalRounds: activeGame.totalRounds
       });
+
+      // CORRECTION: Ajout de l'initialisation du temps de début de la question
+      activeGame.questionStartTime = Date.now();
 
       // Démarrer le timer pour ce round
       activeGame.timer = setTimeout(() => {
@@ -699,5 +713,16 @@ app.prepare().then(() => {
         }
       }
     });
+  });
+
+  // Routes API Express
+  server.all('*', (req, res) => {
+    return handle(req, res);
+  });
+
+  // Démarrer le serveur
+  httpServer.listen(3000, (err) => {
+    if (err) throw err;
+    console.log('> Ready on http://localhost:3000');
   });
 });
