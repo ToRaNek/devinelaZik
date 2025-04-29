@@ -1,0 +1,68 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            String    @id @default(cuid())
+  pseudo        String    @unique
+  name          String    @unique
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  roomsAsHost   Room[]    @relation("RoomsHost")
+  players       RoomPlayer[]
+  accounts Account[]
+  sessions Session[]
+}
+
+model Room {
+  id        String       @id @default(cuid())
+  code      String       @unique
+  hostId    String
+  host      User         @relation("RoomsHost", fields: [hostId], references: [id])
+  createdAt DateTime     @default(now())
+  players   RoomPlayer[]
+}
+
+model RoomPlayer {
+  id       String   @id @default(cuid())
+  roomId   String
+  userId   String
+  score    Int      @default(0)
+  room     Room     @relation(fields: [roomId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
+  @@unique([roomId, userId])
+}
+
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  access_token       String?
+  refresh_token      String?
+  expires_at         Int?
+  user               User    @relation(fields: [userId], references: [id])
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  @@unique([identifier, token])
+}
