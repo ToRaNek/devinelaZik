@@ -3,7 +3,7 @@ const express = require('express');
 const http = require('http');
 const next = require('next');
 const { Server } = require('socket.io');
-const prisma = require('./lib/prisma').default;
+const prisma = require('./lib/prisma');
 
 const dev = process.env.NODE_ENV !== 'production';
 const app = next({ dev });
