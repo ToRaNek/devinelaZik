@@ -1,3 +1,4 @@
+// pages/index.js
 import { getSession } from 'next-auth/react';
 
 export async function getServerSideProps(context) {
@@ -5,7 +6,7 @@ export async function getServerSideProps(context) {
   if (!session) {
     return { redirect: { destination: '/auth/signin', permanent: false } };
   }
-  return { redirect: { destination: '/lobby', permanent: false } };
+  return { redirect: { destination: '/profile', permanent: false } };
 }
 
 export default function Home() {

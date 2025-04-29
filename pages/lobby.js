@@ -24,6 +24,12 @@ export default function Lobby() {
       signIn();
     }
   }, [mounted, status, session]);
+
+  useEffect(() => {
+    if (session && !session.user.spotify && !session.user.deezer) {
+      router.push('/profile');
+    }
+  }, [session]);
   
   // Afficher un état de chargement tant que nous ne sommes pas montés côté client
   // ou que la session est en cours de chargement

@@ -198,13 +198,27 @@ export default function PartieComponent({ roomCode }) {
   }, [socket, roomCode, session, round]);
   
   // Démarrer la partie (hôte uniquement)
+  // In PartieComponent.jsx, update startGame function
   const startGame = () => {
     if (!socket || !isHost) return;
-    
+
+    // Check if all players are ready
+    const allPlayersReady = players.every(p => p.ready);
+    if (!allPlayersReady) {
+      alert("All players must be ready to start the game!");
+      return;
+    }
+
+    // Check if host has connected music service
+    if (!session.user.spotify && !session.user.deezer) {
+      alert("You must connect Spotify or Deezer to host a game!");
+      return;
+    }
+
     socket.emit('startGame', {
       roomCode,
-      rounds: 10, // Configurable
-      source: session.user.spotify ? 'spotify' : 'deezer', // Utiliser le service connecté de l'hôte
+      rounds: 10,
+      source: session.user.spotify ? 'spotify' : 'deezer'
     });
   };
   
