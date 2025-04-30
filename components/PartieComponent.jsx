@@ -32,6 +32,7 @@ export default function PartieComponent({ roomCode }) {
 
     const fetchRoomData = async () => {
       try {
+        setConnectionStatus('connecting');
         const res = await fetch(`/api/rooms/${roomCode}`);
         const data = await res.json();
 
@@ -54,37 +55,54 @@ export default function PartieComponent({ roomCode }) {
     fetchRoomData();
   }, [roomCode, session, router]);
 
+  // Setup socket authentication when user ID is available
+  useEffect(() => {
+    if (!socket || !session?.user?.id) return;
+
+    // Set auth directly
+    socket.auth = { userId: session.user.id };
+    console.log('Setting socket auth with userId:', session.user.id);
+
+    // Only reconnect if socket is already connected
+    // This avoids the connect/disconnect loop
+    if (socket.connected) {
+      console.log('Socket already connected, reconnecting to apply auth');
+      socket.disconnect();
+      // Add a slight delay before reconnecting
+      setTimeout(() => socket.connect(), 250);
+    } else {
+      console.log('Socket not connected, connecting with auth');
+      socket.connect();
+    }
+  }, [socket, session]);
+
   // Configurer les gestionnaires d'événements socket
   useEffect(() => {
-    if (!socket || !isConnected || !roomCode || !session || !room) {
-      console.log("Waiting for socket connection...", {
+    if (!socket || !isConnected || !roomCode || !session?.user?.id || !room) {
+      // Log what's missing for debugging
+      console.log('Waiting to join room:', {
         socketExists: !!socket,
         isConnected,
-        roomCode,
-        sessionExists: !!session,
-        roomExists: !!room
+        room: !!room,
+        userId: session?.user?.id
       });
       return;
     }
 
-    console.log('Setting up socket events for room:', roomCode);
+    console.log('All conditions met, joining room:', roomCode);
 
-    // Force disconnect any previous connection to ensure clean state
-    socket.emit('leaveRoom', roomCode);
+    // Join the room without any forced disconnection
+    socket.emit('joinRoom', {
+      roomCode,
+      user: {
+        id: session.user.id,
+        name: session.user.name,
+        pseudo: session.user.pseudo || session.user.name,
+        image: session.user.image
+      }
+    });
 
-    // Rejoindre la salle avec un délai court pour s'assurer que le disconnect précédent est traité
-    setTimeout(() => {
-      socket.emit('joinRoom', {
-        roomCode,
-        user: {
-          id: session.user.id,
-          name: session.user.name,
-          pseudo: session.user.pseudo || session.user.name,
-          image: session.user.image
-        }
-      });
-      setConnectionStatus('connected');
-    }, 300);
+    setConnectionStatus('connected');
 
     // Gestionnaire pour les données de la salle
     const handleRoomData = (data) => {
@@ -244,10 +262,9 @@ export default function PartieComponent({ roomCode }) {
       });
     }, 1000);
 
-    // Nettoyage
+    // Nettoyage - don't emit leaveRoom here, just remove event listeners
     return () => {
       console.log('Cleaning up socket events');
-      socket.emit('leaveRoom', roomCode);
       socket.off('roomData', handleRoomData);
       socket.off('playerJoined', handlePlayerJoined);
       socket.off('playerLeft', handlePlayerLeft);
@@ -263,17 +280,15 @@ export default function PartieComponent({ roomCode }) {
     };
   }, [socket, isConnected, roomCode, session, players, room, totalRounds]);
 
-  // Ajoutons ce hook useEffect pour gérer les déconnexions et reconnexions
+  // When component unmounts, leave the room
   useEffect(() => {
-    if (!isConnected && socket) {
-      console.log("Socket disconnected, attempting to reconnect...");
-      setConnectionStatus('connecting');
-      // Tentative de reconnexion si déconnecté
-      if (!socket.connected) {
-        socket.connect();
+    return () => {
+      if (socket && socket.connected && roomCode) {
+        console.log(`Component unmounting, leaving room ${roomCode}`);
+        socket.emit('leaveRoom', roomCode);
       }
-    }
-  }, [isConnected, socket]);
+    };
+  }, [socket, roomCode]);
 
   // Démarrer la partie (hôte uniquement)
   const startGame = () => {
@@ -362,6 +377,18 @@ export default function PartieComponent({ roomCode }) {
         </div>
     );
   }
+
+  // Fonction de tentative de reconnexion manuelle
+  const attemptReconnection = () => {
+    if (socket) {
+      console.log("Tentative de reconnexion manuelle...");
+      // Réinitialiser auth
+      socket.auth = { userId: session?.user?.id };
+      // Force reconnection
+      if (socket.connected) socket.disconnect();
+      setTimeout(() => socket.connect(), 250);
+    }
+  };
 
   return (
       <div className="game-container">
@@ -550,13 +577,30 @@ export default function PartieComponent({ roomCode }) {
                       Copier le lien
                     </button>
                   </div>
+
+                  {/* Enhanced debug information */}
+                  <div style={{marginTop: '10px', fontSize: '0.8rem', color: '#666', textAlign: 'left',
+                    padding: '8px', background: '#f8f9fa', borderRadius: '4px'}}>
+                    Socket connected: {isConnected ? 'Yes' : 'No'} <br />
+                    Socket ID: {socket?.id || 'None'} <br />
+                    Room data loaded: {room ? 'Yes' : 'No'} <br />
+                    User logged in: {session?.user?.id ? 'Yes' : 'No'} <br />
+                    Auth status: {socket?.auth?.userId ? 'Auth set' : 'No auth'}
+                  </div>
+
                   <div className="connection-status">
                     {connectionStatus === 'connected' ? (
                         <span className="status-connected">Connecté au serveur</span>
-                    ) : connectionStatus === 'connecting' ? (
-                        <span className="status-disconnected">Connexion au serveur...</span>
                     ) : (
-                        <span className="status-error">Erreur de connexion</span>
+                        <div>
+                          <span className="status-disconnected">Connexion au serveur...</span>
+                          <button
+                              onClick={attemptReconnection}
+                              className="btn btn-sm btn-primary"
+                              style={{marginLeft: '10px', fontSize: '0.8rem', padding: '2px 8px'}}>
+                            Reconnecter
+                          </button>
+                        </div>
                     )}
                   </div>
                 </div>
@@ -566,7 +610,10 @@ export default function PartieComponent({ roomCode }) {
                   <p>Bravo à tous les participants!</p>
                 </div>
             )}
+          </div>
 
+          {/* Chat sidebar on the right */}
+          <div className="chat-sidebar">
             <div className="chat-container">
               <h3>Chat</h3>
               <div className="messages-container">
