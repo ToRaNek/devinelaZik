@@ -1,8 +1,11 @@
+// components/PartieComponent.jsx
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { useSession } from 'next-auth/react';
 import { useSocket } from '../lib/socketContext';
 import Link from 'next/link';
+import GameSettingsComponent from './GameSettingsComponent';
+import EnhancedQuestionComponent from './EnhancedQuestionComponent';
 
 export default function PartieComponent({ roomCode }) {
   const router = useRouter();
@@ -18,16 +21,16 @@ export default function PartieComponent({ roomCode }) {
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState('');
-  const [answer, setAnswer] = useState('');
   const [timer, setTimer] = useState(0);
   const [round, setRound] = useState(0);
   const [totalRounds, setTotalRounds] = useState(10);
-  const [answerStatus, setAnswerStatus] = useState(null); // correct, incorrect, null
+  const [answerStatus, setAnswerStatus] = useState(null); // correct, incorrect, timeout, null
   const [leaderboard, setLeaderboard] = useState([]);
   const [loading, setLoading] = useState(true);
   const [localConnectionStatus, setLocalConnectionStatus] = useState('connecting'); // 'connecting', 'connected', 'error'
+  const [quizType, setQuizType] = useState('multiple_choice'); // multiple_choice, free_text
 
-  // Récupérer les données de la salle - do this first, independent of socket connection
+  // Récupérer les données de la salle
   useEffect(() => {
     if (!roomCode || !session) return;
 
@@ -94,7 +97,7 @@ export default function PartieComponent({ roomCode }) {
     }
   }, [connectionStatus, reconnect]);
 
-  // SIMPLIFIED SOCKET SETUP - consolidated from multiple useEffects
+  // Socket setup
   useEffect(() => {
     // Only proceed if we have everything we need
     if (!socket || !session?.user?.id || !roomCode || !room) {
@@ -109,7 +112,7 @@ export default function PartieComponent({ roomCode }) {
 
     console.log('All conditions met, joining room:', roomCode);
 
-    // Set auth params if needed (should already be set in socketContext)
+    // Set auth params if needed
     if (!socket.auth || socket.auth.userId !== session.user.id) {
       socket.auth = { userId: session.user.id };
       console.log('Updated socket auth with userId:', session.user.id);
@@ -178,10 +181,13 @@ export default function PartieComponent({ roomCode }) {
       setTotalRounds(data.rounds);
       setRound(1);
 
+      // Stocker le type de quiz
+      setQuizType(data.quizType || 'multiple_choice');
+
       // Message système
       setMessages(prev => [...prev, {
         system: true,
-        message: `La partie commence! ${data.rounds} rounds au total.`
+        message: `La partie commence! ${data.rounds} questions au total. Mode: ${data.quizType === 'free_text' ? 'Texte libre' : 'Choix multiples'}`
       }]);
     };
 
@@ -190,7 +196,6 @@ export default function PartieComponent({ roomCode }) {
       setCurrentQuestion(question);
       setTimer(30); // 30 secondes par question
       setAnswerStatus(null);
-      setAnswer('');
 
       // Message système
       setMessages(prev => [...prev, {
@@ -311,7 +316,7 @@ export default function PartieComponent({ roomCode }) {
   }, [socket, isConnected, roomCode, session, players, room, totalRounds, reconnect]);
 
   // Démarrer la partie (hôte uniquement)
-  const startGame = () => {
+  const startGame = (settings) => {
     if (!socket || !isConnected || !isHost) {
       console.error("Cannot start game: not connected or not host");
       return;
@@ -325,14 +330,14 @@ export default function PartieComponent({ roomCode }) {
 
     socket.emit('startGame', {
       roomCode,
-      rounds: 10,
-      source: session.user.spotify ? 'spotify' : 'deezer'
+      rounds: settings.rounds || 10,
+      quizType: settings.quizType || 'multiple_choice',
+      source: settings.source || (session.user.spotify ? 'spotify' : 'deezer')
     });
   };
 
   // Envoyer une réponse
-  const submitAnswer = (e) => {
-    e.preventDefault();
+  const submitAnswer = (answer) => {
     if (!socket || !isConnected || !answer.trim() || !currentQuestion) return;
 
     console.log('Submitting answer:', answer);
@@ -342,8 +347,6 @@ export default function PartieComponent({ roomCode }) {
       answer: answer.trim(),
       questionId: currentQuestion.id
     });
-
-    setAnswer('');
   };
 
   // Envoyer un message de chat
@@ -403,7 +406,6 @@ export default function PartieComponent({ roomCode }) {
     reconnect();
   };
 
-  // Dans l'élément JSX où vous affichez les diagnostics de connexion
   return (
       <div className="game-container">
         {/* Connection status */}
@@ -424,7 +426,6 @@ export default function PartieComponent({ roomCode }) {
           )}
         </div>
 
-        {/* Rest of the component's JSX remains the same as in the original file */}
         <header className="game-header">
           <h1>Devine la Zik - Salle: {roomCode}</h1>
           <div className="room-actions">
@@ -451,11 +452,11 @@ export default function PartieComponent({ roomCode }) {
                       )}
                     </div>
                     <div className="player-info">
-                  <span className="player-name">
-                    {player.user?.pseudo || 'Unknown'}
-                    {player.userId === room.hostId && <span className="host-badge">Hôte</span>}
-                    {player.userId === session.user.id && <span className="you-badge">Vous</span>}
-                  </span>
+                      <span className="player-name">
+                        {player.user?.pseudo || 'Unknown'}
+                        {player.userId === room.hostId && <span className="host-badge">Hôte</span>}
+                        {player.userId === session.user.id && <span className="you-badge">Vous</span>}
+                      </span>
                       <span className="player-score">Score: {player.score || 0}</span>
                     </div>
                   </li>
@@ -464,13 +465,10 @@ export default function PartieComponent({ roomCode }) {
 
             {gameStatus === 'waiting' && isHost && (
                 <div className="host-controls">
-                  <button
-                      onClick={startGame}
-                      className="btn btn-primary start-game-btn"
-                      disabled={!isConnected}
-                  >
-                    {!isConnected ? 'Connexion...' : 'Commencer la partie'}
-                  </button>
+                  <GameSettingsComponent
+                      onStartGame={startGame}
+                      isHost={isHost}
+                  />
                   {players.length < 2 && (
                       <p className="waiting-message">En attente d'autres joueurs...</p>
                   )}
@@ -489,8 +487,8 @@ export default function PartieComponent({ roomCode }) {
                     <span className="round-counter">Round {round}/{totalRounds}</span>
                     {timer > 0 && currentQuestion && (
                         <span className={`timer ${timer <= 10 ? 'timer-warning' : ''}`}>
-                    {timer}s
-                  </span>
+                          {timer}s
+                        </span>
                     )}
                   </div>
                 </div>
@@ -512,7 +510,14 @@ export default function PartieComponent({ roomCode }) {
                     </ol>
 
                     {isHost && (
-                        <button onClick={startGame} className="btn btn-primary new-game-btn">
+                        <button
+                            onClick={() => startGame({
+                              rounds: totalRounds,
+                              quizType: quizType,
+                              source: session.user.spotify ? 'spotify' : 'deezer'
+                            })}
+                            className="btn btn-primary new-game-btn"
+                        >
                           Nouvelle partie
                         </button>
                     )}
@@ -527,79 +532,12 @@ export default function PartieComponent({ roomCode }) {
 
           <div className="game-main">
             {gameStatus === 'playing' && currentQuestion ? (
-                <div className="question-container">
-                  <div className="question-header">
-                    <h2>
-                      {currentQuestion.type === 'artist' && "Devinez l'artiste!"}
-                      {currentQuestion.type === 'song' && `Devinez le titre de ${currentQuestion.artistName}!`}
-                      {currentQuestion.type === 'album' && `Devinez l'album de ${currentQuestion.artistName}!`}
-                    </h2>
-                    <div className={`timer-bar ${timer <= 10 ? 'timer-critical' : ''}`}>
-                      <div className="timer-progress" style={{ width: `${(timer / 30) * 100}%` }}></div>
-                    </div>
-                  </div>
-
-                  <div className="media-container">
-                    {currentQuestion.type === 'artist' && currentQuestion.previewUrl && (
-                        <div className="audio-player">
-                          <audio src={currentQuestion.previewUrl} controls autoPlay></audio>
-                          <div className="hint">
-                            <p>Écoutez l'extrait et devinez l'artiste...</p>
-                          </div>
-                        </div>
-                    )}
-
-                    {(currentQuestion.type === 'song' || currentQuestion.type === 'album') && (
-                        <div className="album-cover">
-                          <img
-                              src={currentQuestion.albumCover || '/placeholder-album.png'}
-                              alt="Album cover"
-                          />
-                          {currentQuestion.type === 'song' && currentQuestion.previewUrl && (
-                              <audio src={currentQuestion.previewUrl} controls autoPlay></audio>
-                          )}
-                        </div>
-                    )}
-                  </div>
-
-                  <form onSubmit={submitAnswer} className="answer-form">
-                    <div className={`answer-input-group ${answerStatus ? `answer-${answerStatus}` : ''}`}>
-                      <input
-                          type="text"
-                          value={answer}
-                          onChange={(e) => setAnswer(e.target.value)}
-                          placeholder="Votre réponse..."
-                          className="answer-input"
-                          disabled={answerStatus === 'correct' || answerStatus === 'timeout'}
-                      />
-                      <button
-                          type="submit"
-                          className="btn btn-primary submit-answer"
-                          disabled={answerStatus === 'correct' || answerStatus === 'timeout'}
-                      >
-                        Valider
-                      </button>
-                    </div>
-
-                    {answerStatus === 'correct' && (
-                        <div className="answer-feedback correct">
-                          <span>Bravo! Réponse correcte</span>
-                        </div>
-                    )}
-
-                    {answerStatus === 'incorrect' && (
-                        <div className="answer-feedback incorrect">
-                          <span>Incorrect, essayez encore!</span>
-                        </div>
-                    )}
-
-                    {answerStatus === 'timeout' && (
-                        <div className="answer-feedback timeout">
-                          <span>Temps écoulé! La réponse était: {currentQuestion.answer}</span>
-                        </div>
-                    )}
-                  </form>
-                </div>
+                <EnhancedQuestionComponent
+                    question={currentQuestion}
+                    timer={timer}
+                    onSubmitAnswer={submitAnswer}
+                    answerStatus={answerStatus}
+                />
             ) : gameStatus === 'waiting' ? (
                 <div className="waiting-screen">
                   <h2>En attente du début de la partie</h2>
@@ -611,7 +549,7 @@ export default function PartieComponent({ roomCode }) {
                     </button>
                   </div>
 
-                  {/* Enhanced debug information */}
+                  {/* Debug information */}
                   <div style={{marginTop: '10px', fontSize: '0.8rem', color: '#666', textAlign: 'left',
                     padding: '8px', background: '#f8f9fa', borderRadius: '4px'}}>
                     Socket connected: {isConnected ? 'Yes' : 'No'} <br />

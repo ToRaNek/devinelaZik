@@ -1327,3 +1327,136 @@ body {
     height: 400px; /* Fixed height on mobile */
   }
 }
+
+/* Ajouter à styles/globals.css */
+
+/* Styles pour les composants de jeu améliorés */
+.game-settings {
+  background: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-top: 1.5rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.settings-group {
+  margin-bottom: 1.5rem;
+}
+
+.settings-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.settings-select {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  background-color: white;
+  font-size: 1rem;
+}
+
+.settings-help {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: #6c757d;
+  background: #f8f9fa;
+  padding: 0.75rem;
+  border-radius: 4px;
+  border-left: 3px solid #007bff;
+}
+
+/* Styles pour les questions et réponses améliorées */
+.options-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.option-button {
+  padding: 1rem;
+  border: 2px solid #dee2e6;
+  border-radius: 8px;
+  background: white;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.option-button:hover:not(:disabled) {
+  border-color: #007bff;
+  background: #f8f9fa;
+}
+
+.option-button.selected {
+  border-color: #007bff;
+  background: #e6f2ff;
+}
+
+.option-button.correct {
+  border-color: #28a745;
+  background: #d4edda;
+}
+
+.option-button.incorrect {
+  border-color: #dc3545;
+  background: #f8d7da;
+}
+
+.option-button:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+/* Styles pour la saisie libre avec suggestions */
+.free-text-answer {
+  position: relative;
+  width: 100%;
+}
+
+.input-with-suggestions {
+  position: relative;
+  flex-grow: 1;
+}
+
+.suggestions-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #dee2e6;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 10;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+.suggestion-item {
+  padding: 10px 15px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.suggestion-item:hover {
+  background-color: #f8f9fa;
+}
+
+/* Animation de la transition entre les questions */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.question-container {
+  animation: fadeIn 0.3s ease-out;
+}

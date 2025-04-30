@@ -4,9 +4,8 @@ const http = require('http');
 const next = require('next');
 const { Server } = require('socket.io');
 const { PrismaClient } = require('@prisma/client');
-const { generateQuestionsFromSpotify } = require('./lib/spotifyUtils');
+const { generateEnhancedQuestions } = require('./lib/enhancedSpotifyUtils');
 
-// Rest of your server code...
 const prisma = new PrismaClient();
 const dev = process.env.NODE_ENV !== 'production';
 const app = next({ dev });
@@ -192,25 +191,29 @@ app.prepare().then(() => {
           return;
         }
 
-        // Generate questions using Spotify data
+        // Generate questions using enhanced generator
         let questions = [];
         try {
-          // Get questions from Spotify
-          console.log(`Generating questions from ${data.source} for user ${socket.userId}`);
-          questions = await generateQuestionsFromSpotify(socket.userId, data.rounds || 10);
+          // Get questions from Spotify with the specified quiz type
+          console.log(`Generating questions from ${data.source} for user ${socket.userId} with quiz type ${data.quizType || 'multiple_choice'}`);
+          questions = await generateEnhancedQuestions(
+              socket.userId,
+              data.rounds || 10,
+              data.quizType || 'multiple_choice'
+          );
 
-          // Add IDs and round numbers to questions
-          questions = questions.map((q, index) => ({
-            ...q,
-            id: `q-${Date.now()}-${index}`,
-            round: index + 1
-          }));
-
-          console.log(`Generated ${questions.length} questions`);
+          console.log(`Generated ${questions.length} questions of type ${data.quizType || 'multiple_choice'}`);
         } catch (error) {
           console.error('Error generating questions:', error);
-          // Use sample questions as fallback
-          questions = getSampleQuestions(data.rounds || 10);
+          // Fallback to sample questions (handled by the enhanced generator)
+          questions = [];
+        }
+
+        // If no questions were generated, log error and notify user
+        if (questions.length === 0) {
+          console.error('Failed to generate any questions');
+          socket.emit('error', { message: 'Impossible de générer des questions. Veuillez réessayer.' });
+          return;
         }
 
         // Store game data
@@ -221,6 +224,7 @@ app.prepare().then(() => {
           currentRound: 0,
           totalRounds: data.rounds || 10,
           questions: questions,
+          quizType: data.quizType || 'multiple_choice',
           scores: roomData.players.map(player => ({
             userId: player.userId,
             user: player.user,
@@ -237,6 +241,7 @@ app.prepare().then(() => {
         // Inform clients that game is starting
         io.to(data.roomCode).emit('gameStarted', {
           rounds: data.rounds || 10,
+          quizType: data.quizType || 'multiple_choice',
           players: roomData.players.length,
           timestamp: Date.now()
         });
@@ -445,11 +450,12 @@ app.prepare().then(() => {
 
     console.log(`Sending question for round ${gameData.currentRound}/${gameData.totalRounds} to room ${roomCode}`);
 
+    // Clone the question and remove the answer
+    const questionForClient = { ...currentQuestion };
+    delete questionForClient.answer; // Don't send the answer to clients!
+
     // Send question to all clients
-    io.to(roomCode).emit('newQuestion', {
-      ...currentQuestion,
-      answer: undefined, // Don't send the answer to clients!
-    });
+    io.to(roomCode).emit('newQuestion', questionForClient);
 
     // Set timer for 30 seconds
     gameData.questionTimer = setTimeout(() => {
@@ -522,103 +528,6 @@ app.prepare().then(() => {
 
     // Clean up
     activeGames.delete(roomCode);
-  }
-
-  // Function to get sample questions if Spotify API fails
-  function getSampleQuestions(count) {
-    const questions = [
-      {
-        type: 'artist',
-        previewUrl: 'https://p.scdn.co/mp3-preview/3eb16018c2a700240e9dfb5a3f1834af7c33a128',
-        answer: 'Daft Punk',
-        artistName: 'Daft Punk',
-        albumCover: 'https://i.scdn.co/image/ab67616d0000b273b33d46dfa2635a47eebf63b2'
-      },
-      {
-        type: 'song',
-        previewUrl: 'https://p.scdn.co/mp3-preview/5a12483aa3b51331aba663131dbac8c26a4e9aef',
-        answer: 'Bohemian Rhapsody',
-        artistName: 'Queen',
-        albumCover: 'https://i.scdn.co/image/ab67616d0000b273d254ca498b52d66b80085a1e'
-      },
-      {
-        type: 'album',
-        answer: 'Thriller',
-        artistName: 'Michael Jackson',
-        albumCover: 'https://i.scdn.co/image/ab67616d0000b2734121faee8df82c526cbab2be'
-      },
-      {
-        type: 'artist',
-        previewUrl: 'https://p.scdn.co/mp3-preview/0c068b0d5b1d4afb4ce01c731eddfe271a4ab5bb',
-        answer: 'Billie Eilish',
-        artistName: 'Billie Eilish',
-        albumCover: 'https://i.scdn.co/image/ab67616d0000b2732a038d3bf875d23e4aeaa84e'
-      },
-      {
-        type: 'song',
-        previewUrl: 'https://p.scdn.co/mp3-preview/452de87e6104ded50e674050d56c7269336a3fe9',
-        answer: 'Blinding Lights',
-        artistName: 'The Weeknd',
-        albumCover: 'https://i.scdn.co/image/ab67616d0000b27348a42a53ea8e0d9e98423a6d'
-      },
-      {
-        type: 'album',
-        answer: 'The Dark Side of the Moon',
-        artistName: 'Pink Floyd',
-        albumCover: 'https://i.scdn.co/image/ab67616d0000b273ea7caaff71dea1051d49b2fe'
-      },
-      {
-        type: 'artist',
-        previewUrl: 'https://p.scdn.co/mp3-preview/77a5b67f66c1f18353ea5afc6e8628c145267d4a',
-        answer: 'Kendrick Lamar',
-        artistName: 'Kendrick Lamar',
-        albumCover: 'https://i.scdn.co/image/ab67616d0000b2732e8ed79e177ff6011076f5f0'
-      },
-      {
-        type: 'song',
-        previewUrl: 'https://p.scdn.co/mp3-preview/7df27a9a6ac1d6c8767b61b38dc37ba5cfa3f19c',
-        answer: 'Imagine',
-        artistName: 'John Lennon',
-        albumCover: 'https://i.scdn.co/image/ab67616d0000b2736750daf5f4576e3c25d5c7aa'
-      },
-      {
-        type: 'album',
-        answer: 'Nevermind',
-        artistName: 'Nirvana',
-        albumCover: 'https://i.scdn.co/image/ab67616d0000b27336c5417732e53e23cb219246'
-      },
-      {
-        type: 'artist',
-        previewUrl: 'https://p.scdn.co/mp3-preview/8de4f9d9671c42e7e6f3ecf0edcba3f08d5593f2',
-        answer: 'Taylor Swift',
-        artistName: 'Taylor Swift',
-        albumCover: 'https://i.scdn.co/image/ab67616d0000b273e0b64c8be3c4e804abcb2696'
-      },
-      {
-        type: 'song',
-        previewUrl: 'https://p.scdn.co/mp3-preview/3eb16018c2a700240e9dfb5a3f1834af7c33a128',
-        answer: 'Get Lucky',
-        artistName: 'Daft Punk',
-        albumCover: 'https://i.scdn.co/image/ab67616d0000b273b33d46dfa2635a47eebf63b2'
-      },
-      {
-        type: 'album',
-        answer: 'Abbey Road',
-        artistName: 'The Beatles',
-        albumCover: 'https://i.scdn.co/image/ab67616d0000b273dc30583ba717007b00cceb25'
-      }
-    ];
-
-    // Add IDs and round numbers
-    const selectedQuestions = questions
-        .slice(0, count)
-        .map((q, index) => ({
-          ...q,
-          id: `sample-${Date.now()}-${index}`,
-          round: index + 1
-        }));
-
-    return selectedQuestions;
   }
 
   // Add a periodic cleanup task to remove stale data
