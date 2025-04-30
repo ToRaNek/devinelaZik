@@ -14,11 +14,12 @@ export default function SocketTest() {
         const init = async () => {
             try {
                 addLog("Initializing server...");
+                // Assurez-vous que le serveur Socket.IO est initialisé
                 await fetch('/api/socketio');
                 addLog("Creating socket...");
 
                 const socket = io({
-                    path: '/api/socketio',
+                    path: '/socket.io', // Utilisez le même chemin que sur le serveur
                     transports: ['websocket', 'polling'],
                     autoConnect: true
                 });
@@ -39,6 +40,19 @@ export default function SocketTest() {
 
                 socket.on('serverAck', (data) => {
                     addLog(`Server ack: ${JSON.stringify(data)}`);
+                });
+
+                // Nouveaux événements pour le diagnostic
+                socket.io.on('reconnect_attempt', (attempt) => {
+                    addLog(`Reconnection attempt #${attempt}`);
+                });
+
+                socket.io.on('reconnect', (attemptNumber) => {
+                    addLog(`Reconnected after ${attemptNumber} attempts`);
+                });
+
+                socket.io.on('error', (error) => {
+                    addLog(`Socket.IO error: ${error}`);
                 });
 
                 // Cleanup
