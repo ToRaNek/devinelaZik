@@ -25,15 +25,15 @@ export default function PartieComponent({ roomCode }) {
   const [answerStatus, setAnswerStatus] = useState(null); // correct, incorrect, null
   const [leaderboard, setLeaderboard] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [setConnectionStatus] = useState('connecting'); // 'connecting', 'connected', 'error'
+  const [localConnectionStatus, setLocalConnectionStatus] = useState('connecting'); // 'connecting', 'connected', 'error'
 
-  // Récupérer les données de la salle
+  // Récupérer les données de la salle - do this first, independent of socket connection
   useEffect(() => {
     if (!roomCode || !session) return;
 
     const fetchRoomData = async () => {
       try {
-        setConnectionStatus('connecting');
+        setLocalConnectionStatus('connecting');
         const res = await fetch(`/api/rooms/${roomCode}`);
         const data = await res.json();
 
@@ -56,6 +56,7 @@ export default function PartieComponent({ roomCode }) {
     fetchRoomData();
   }, [roomCode, session, router]);
 
+  // Component lifecycle logging
   useEffect(() => {
     console.log("Component mounted - Connection info:", {
       status: connectionStatus,
@@ -65,12 +66,18 @@ export default function PartieComponent({ roomCode }) {
       lastError
     });
 
-    // Cleanup
+    // Cleanup on unmount
     return () => {
       isMounted.current = false;
       console.log("Component unmounting...");
+
+      // Clean up by leaving the room when component unmounts
+      if (socket && socket.connected && roomCode) {
+        console.log(`Component unmounting, leaving room ${roomCode}`);
+        socket.emit('leaveRoom', roomCode);
+      }
     };
-  }, [connectionStatus, isConnected, socket, lastError]);
+  }, [connectionStatus, isConnected, socket, lastError, roomCode]);
 
   // Vérifier et réagir aux changements d'état de connexion
   useEffect(() => {
@@ -87,83 +94,53 @@ export default function PartieComponent({ roomCode }) {
     }
   }, [connectionStatus, reconnect]);
 
-  // Simplifier le setup socket authentication
+  // SIMPLIFIED SOCKET SETUP - consolidated from multiple useEffects
   useEffect(() => {
-    if (!socket || !session?.user?.id) return;
-
-    console.log("Authentication info updated, reconnecting with new auth...");
-
-    // Mettre à jour l'authentification et reconnecter
-    reconnect();
-  }, [socket, session, reconnect]);
-
-  // Setup socket authentication when user ID is available
-  useEffect(() => {
-    if (!socket || !session?.user?.id) {
-      console.log("Missing socket or user ID:", {
+    // Only proceed if we have everything we need
+    if (!socket || !session?.user?.id || !roomCode || !room) {
+      console.log('Waiting for required data:', {
         socketExists: !!socket,
-        userId: session?.user?.id
-      });
-      return;
-    }
-
-    // Set auth params directly
-    socket.auth = { userId: session.user.id };
-    console.log('Setting socket auth with userId:', session.user.id);
-
-    // Connect only if not already connected
-    if (!socket.connected) {
-      console.log('Socket not connected, connecting now');
-      socket.connect();
-    } else {
-      console.log('Socket already connected:', socket.id);
-    }
-  }, [socket, session]);
-
-  useEffect(() => {
-    if (!socket || !session?.user?.id) return;
-
-    console.log("Authentication info updated, reconnecting with new auth...");
-
-    // Mettre à jour l'authentification et reconnecter
-    reconnect();
-  }, [socket, session, reconnect]);
-
-  // Configurer les gestionnaires d'événements socket
-  useEffect(() => {
-    if (!socket || !isConnected || !roomCode || !session?.user?.id || !room) {
-      // Log what's missing for debugging
-      console.log('Waiting to join room:', {
-        socketExists: !!socket,
-        isConnected,
-        room: !!room,
-        userId: session?.user?.id
+        userId: session?.user?.id,
+        roomCode,
+        roomLoaded: !!room
       });
       return;
     }
 
     console.log('All conditions met, joining room:', roomCode);
 
-    // Join the room without any forced disconnection
-    socket.emit('joinRoom', {
-      roomCode,
-      user: {
-        id: session.user.id,
-        name: session.user.name,
-        pseudo: session.user.pseudo || session.user.name,
-        image: session.user.image
-      }
-    });
+    // Set auth params if needed (should already be set in socketContext)
+    if (!socket.auth || socket.auth.userId !== session.user.id) {
+      socket.auth = { userId: session.user.id };
+      console.log('Updated socket auth with userId:', session.user.id);
+    }
 
-    setConnectionStatus('connected');
+    // Make sure we're connected
+    if (!socket.connected) {
+      console.log('Socket not connected, connecting now');
+      socket.connect();
+    }
 
-    // Gestionnaire pour les données de la salle
+    // Join the room
+    if (socket.connected) {
+      socket.emit('joinRoom', {
+        roomCode,
+        user: {
+          id: session.user.id,
+          name: session.user.name,
+          pseudo: session.user.pseudo || session.user.name,
+          image: session.user.image
+        }
+      });
+      setLocalConnectionStatus('connected');
+    }
+
+    // EVENT HANDLERS
     const handleRoomData = (data) => {
       console.log('Received room data:', data);
       setPlayers(data.players);
     };
 
-    // Gérer événements socket
     const handlePlayerJoined = (data) => {
       console.log('Player joined:', data);
       setPlayers(prev => {
@@ -287,14 +264,14 @@ export default function PartieComponent({ roomCode }) {
 
     const handleError = (error) => {
       console.error('Socket error:', error);
-      setConnectionStatus('error');
+      setLocalConnectionStatus('error');
       setMessages(prev => [...prev, {
         system: true,
         message: `Erreur de connexion: ${error.message || 'Connexion au serveur perdue'}`
       }]);
     };
 
-    // Enregistrer les gestionnaires d'événements
+    // Register all event handlers
     socket.on('roomData', handleRoomData);
     socket.on('playerJoined', handlePlayerJoined);
     socket.on('playerLeft', handlePlayerLeft);
@@ -307,7 +284,7 @@ export default function PartieComponent({ roomCode }) {
     socket.on('hostChanged', handleHostChanged);
     socket.on('error', handleError);
 
-    // Gérer le timer
+    // Timer interval
     const timerInterval = setInterval(() => {
       setTimer(prev => {
         if (prev <= 0) return 0;
@@ -315,7 +292,7 @@ export default function PartieComponent({ roomCode }) {
       });
     }, 1000);
 
-    // Nettoyage - don't emit leaveRoom here, just remove event listeners
+    // Cleanup function
     return () => {
       console.log('Cleaning up socket events');
       socket.off('roomData', handleRoomData);
@@ -331,17 +308,7 @@ export default function PartieComponent({ roomCode }) {
       socket.off('error', handleError);
       clearInterval(timerInterval);
     };
-  }, [socket, isConnected, roomCode, session, players, room, totalRounds]);
-
-  // When component unmounts, leave the room
-  useEffect(() => {
-    return () => {
-      if (socket && socket.connected && roomCode) {
-        console.log(`Component unmounting, leaving room ${roomCode}`);
-        socket.emit('leaveRoom', roomCode);
-      }
-    };
-  }, [socket, roomCode]);
+  }, [socket, isConnected, roomCode, session, players, room, totalRounds, reconnect]);
 
   // Démarrer la partie (hôte uniquement)
   const startGame = () => {
@@ -431,7 +398,6 @@ export default function PartieComponent({ roomCode }) {
     );
   }
 
-
   const attemptReconnection = () => {
     console.log("User requested manual reconnection");
     reconnect();
@@ -442,9 +408,9 @@ export default function PartieComponent({ roomCode }) {
       <div className="game-container">
         {/* Connection status */}
         <div className="connection-status">
-          {connectionStatus === 'connected' ? (
+          {isConnected ? (
               <span className="status-connected">✅ Connecté au serveur (ID: {socket?.id})</span>
-          ) : connectionStatus === 'connecting' ? (
+          ) : localConnectionStatus === 'connecting' ? (
               <span className="status-connecting">🔄 Connexion en cours...</span>
           ) : (
               <div>
@@ -656,7 +622,7 @@ export default function PartieComponent({ roomCode }) {
                   </div>
 
                   <div className="connection-status">
-                    {connectionStatus === 'connected' ? (
+                    {isConnected ? (
                         <span className="status-connected">Connecté au serveur</span>
                     ) : (
                         <div>
