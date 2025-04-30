@@ -7,7 +7,8 @@ RUN mkdir -p prisma
 COPY prisma/schema.prisma ./prisma/
 # Install OpenSSL and other dependencies required for WebSockets
 RUN apt-get update -y && apt-get install -y openssl ca-certificates
-RUN npm install
+# Dans la section RUN npm install
+RUN npm install http-proxy --save
 RUN npx prisma generate
 COPY . .
 RUN npm run build
