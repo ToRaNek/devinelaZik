@@ -9,9 +9,31 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U example"]
+      test: ["CMD-SHELL", "pg_isready -U example -d devinelazik"]
       interval: 5s
       retries: 5
+    networks:
+      - app-network
+
+  db_init:
+    build: .
+    environment:
+      DATABASE_URL: "postgresql://example:example@postgres:5432/devinelazik"
+    command: >
+      sh -c "
+        echo 'Waiting for postgres...' &&
+        until nc -z postgres 5432; do
+          echo 'Waiting for postgres...'
+          sleep 1
+        done &&
+        echo 'Postgres is up - creating database schema' &&
+        npx prisma db push --force-reset
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
 
   next_app:
     build: .
@@ -30,8 +52,14 @@ services:
       DEEZER_CLIENT_ID: "prout"
       DEEZER_CLIENT_SECRET: "caca"
     depends_on:
-      postgres:
-        condition: service_healthy
+      db_init:
+        condition: service_completed_successfully
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
 
 volumes:
   db_data:
