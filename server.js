@@ -13,6 +13,7 @@ const handle = app.getRequestHandler();
 // Stocker les données des salles actives en mémoire pour plus de rapidité
 const activeRooms = new Map();
 const activeGames = new Map();
+const activeConnections = new Map(); // Pour suivre les connexions actives par utilisateur
 
 // Helpers pour la logique du jeu
 const QUESTION_DURATION = 30; // secondes
@@ -209,6 +210,8 @@ const getSampleQuestions = (count) => {
 app.prepare().then(() => {
   const server = express();
   const httpServer = http.createServer(server);
+
+  // Configuration améliorée de Socket.IO
   const io = new Server(httpServer, {
     cors: {
       origin: '*',
@@ -216,18 +219,30 @@ app.prepare().then(() => {
     },
     pingTimeout: 60000,
     pingInterval: 25000,
+    transports: ['websocket', 'polling'], // Assurez-vous que les deux transports sont disponibles
+    allowEIO3: true, // Pour la compatibilité
   });
 
   // Middleware pour les logs et la gestion des sessions
   io.use((socket, next) => {
     console.log('Socket middleware executed with auth:', socket.handshake.auth);
-    // We'll set userId later in the joinRoom event
+
+    // Si l'authentification contient un userId, l'associer au socket
+    if (socket.handshake.auth && socket.handshake.auth.userId) {
+      socket.userId = socket.handshake.auth.userId;
+    }
+
     next();
   });
 
   // Socket.IO logic
   io.on('connection', (socket) => {
     console.log('New client connected', socket.id);
+
+    // Vérifier la santé de la connexion périodiquement
+    const heartbeat = setInterval(() => {
+      socket.emit('heartbeat', { timestamp: Date.now() });
+    }, 30000);
 
     // Rejoindre une salle
     socket.on('joinRoom', async ({roomCode, user}) => {
@@ -236,6 +251,16 @@ app.prepare().then(() => {
 
         // Store user ID on socket instance for this session
         socket.userId = user.id;
+
+        // Ajouter à la liste des connexions actives
+        activeConnections.set(user.id, socket.id);
+
+        // Quitter les autres salles d'abord (pour éviter les connexions multiples)
+        for (const room of [...socket.rooms]) {
+          if (room !== socket.id) {
+            socket.leave(room);
+          }
+        }
 
         // Joindre la salle Socket.IO
         socket.join(roomCode);
@@ -306,6 +331,26 @@ app.prepare().then(() => {
             }
           });
 
+          // Ajouter aussi à la base de données si pas déjà présent
+          try {
+            await prisma.roomPlayer.upsert({
+              where: {
+                roomId_userId: {
+                  roomId: activeRoom.id,
+                  userId: user.id
+                }
+              },
+              update: {},
+              create: {
+                roomId: activeRoom.id,
+                userId: user.id,
+                score: 0
+              }
+            });
+          } catch (err) {
+            console.error('Error upserting player to database:', err);
+          }
+
           // Informer les autres joueurs
           socket.to(roomCode).emit('playerJoined', {
             userId: user.id,
@@ -317,6 +362,13 @@ app.prepare().then(() => {
             score: 0,
             ready: false
           });
+        } else {
+          // Mettre à jour les informations du joueur existant
+          activeRoom.players[existingPlayerIndex].user = {
+            id: user.id,
+            pseudo: user.pseudo || user.name,
+            image: user.image
+          };
         }
 
         // Always send the current room data back to the connecting user
@@ -329,7 +381,7 @@ app.prepare().then(() => {
         });
       } catch (error) {
         console.error('Error joining room:', error);
-        socket.emit('error', {message: 'Failed to join room'});
+        socket.emit('error', {message: 'Failed to join room: ' + error.message});
       }
     });
 
@@ -641,12 +693,15 @@ app.prepare().then(() => {
         }
 
         // Informer le joueur de sa réponse correcte
-        socket.emit('answerResult', {
-          correct: true,
-          points: points,
-          timeBonus: timeBonus,
-          answer: currentQuestion.answer
-        });
+        const playerSocketId = activeConnections.get(userId);
+        if (playerSocketId) {
+          io.to(playerSocketId).emit('answerResult', {
+            correct: true,
+            points: points,
+            timeBonus: timeBonus,
+            answer: currentQuestion.answer
+          });
+        }
 
         // Informer les autres joueurs qu'un joueur a trouvé la réponse
         socket.to(roomCode).emit('playerCorrect', {
@@ -727,9 +782,22 @@ app.prepare().then(() => {
       io.to(roomCode).emit('message', messageObject);
     });
 
+    // Vérification de la santé de la connexion
+    socket.on('ping', () => {
+      socket.emit('pong', { timestamp: Date.now() });
+    });
+
     // Déconnexion
     socket.on('disconnect', () => {
       console.log('Client disconnected', socket.id, 'userId:', socket.userId);
+
+      // Arrêter le heartbeat
+      clearInterval(heartbeat);
+
+      // Si userId est défini, le supprimer de la liste des connexions actives
+      if (socket.userId) {
+        activeConnections.delete(socket.userId);
+      }
 
       // Trouver toutes les salles où ce socket est présent
       for (const [roomCode, room] of activeRooms.entries()) {
@@ -786,6 +854,24 @@ app.prepare().then(() => {
   server.all('*', (req, res) => {
     return handle(req, res);
   });
+
+  // Fonction pour nettoyer les salles inactives périodiquement
+  const cleanupInactiveRooms = () => {
+    console.log('Cleaning up inactive rooms');
+    const now = Date.now();
+    const inactivityThreshold = 3 * 60 * 60 * 1000; // 3 heures
+
+    for (const [roomCode, room] of activeRooms.entries()) {
+      // Si la salle n'a pas de jeu actif et est inactive depuis longtemps
+      if (!activeGames.has(roomCode) && room.lastActivity && (now - room.lastActivity > inactivityThreshold)) {
+        console.log(`Removing inactive room ${roomCode}`);
+        activeRooms.delete(roomCode);
+      }
+    }
+  };
+
+  // Nettoyer les salles inactives toutes les heures
+  setInterval(cleanupInactiveRooms, 60 * 60 * 1000);
 
   // Démarrer le serveur
   httpServer.listen(3000, (err) => {

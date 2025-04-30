@@ -4,7 +4,7 @@ import { useSession, signOut } from 'next-auth/react';
 import { useState, useRef, useEffect } from 'react';
 
 export default function Header() {
-    const { data: session } = useSession();
+    const { data: session, status } = useSession();
     const [menuOpen, setMenuOpen] = useState(false);
     const menuRef = useRef(null);
 
@@ -22,14 +22,18 @@ export default function Header() {
         };
     }, [menuRef]);
 
-    if (!session) return null;
+    // Don't render anything while loading
+    if (status === 'loading') return null;
+
+    // Don't render if not authenticated
+    if (status === 'unauthenticated') return null;
 
     const handleSignOut = () => {
         signOut({ callbackUrl: '/' });
     };
 
     // Check if user has connected a music service
-    const hasMusicService = session.user.spotify || session.user.deezer;
+    const hasMusicService = session?.user?.spotify || session?.user?.deezer;
 
     return (
         <header className="app-header">
@@ -46,41 +50,43 @@ export default function Header() {
             </div>
 
             <div className="header-right">
-                <div className="profile-menu" ref={menuRef}>
-                    <button
-                        className="profile-button"
-                        onClick={() => setMenuOpen(!menuOpen)}
-                        aria-expanded={menuOpen}
-                        aria-label="Menu profil"
-                    >
-                        {session.user.image ? (
-                            <img src={session.user.image} alt="Profile" className="profile-icon" />
-                        ) : (
-                            <div className="profile-icon-placeholder">
-                                {session.user.pseudo?.[0]?.toUpperCase() || 'U'}
-                            </div>
-                        )}
-                        <span className="profile-name">{session.user.pseudo || session.user.name}</span>
-                    </button>
-
-                    {menuOpen && (
-                        <div className="profile-dropdown">
-                            <Link href="/profile" className="dropdown-item">
-                                Mon Profil
-                            </Link>
-
-                            {!hasMusicService && (
-                                <div className="dropdown-alert">
-                                    <span>❗</span> Connectez un service de musique pour jouer
+                {session && (
+                    <div className="profile-menu" ref={menuRef}>
+                        <button
+                            className="profile-button"
+                            onClick={() => setMenuOpen(!menuOpen)}
+                            aria-expanded={menuOpen}
+                            aria-label="Menu profil"
+                        >
+                            {session.user.image ? (
+                                <img src={session.user.image} alt="Profile" className="profile-icon" />
+                            ) : (
+                                <div className="profile-icon-placeholder">
+                                    {session.user.pseudo?.[0]?.toUpperCase() || 'U'}
                                 </div>
                             )}
+                            <span className="profile-name">{session.user.pseudo || session.user.name}</span>
+                        </button>
 
-                            <button onClick={handleSignOut} className="dropdown-item logout">
-                                Se déconnecter
-                            </button>
-                        </div>
-                    )}
-                </div>
+                        {menuOpen && (
+                            <div className="profile-dropdown">
+                                <Link href="/profile" className="dropdown-item">
+                                    Mon Profil
+                                </Link>
+
+                                {!hasMusicService && (
+                                    <div className="dropdown-alert">
+                                        <span>❗</span> Connectez un service de musique pour jouer
+                                    </div>
+                                )}
+
+                                <button onClick={handleSignOut} className="dropdown-item logout">
+                                    Se déconnecter
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
         </header>
     );

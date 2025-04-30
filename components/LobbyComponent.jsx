@@ -1,12 +1,26 @@
 // components/LobbyComponent.jsx
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useSession } from 'next-auth/react';
+import { useSocket } from '../lib/socketContext';
 import Link from 'next/link';
 
 export default function LobbyComponent() {
   const router = useRouter();
   const { data: session } = useSession();
+  const { socket, isConnected } = useSocket();
+
+  useEffect(() => {
+    if (socket && session?.user?.id) {
+      // Envoyer l'ID utilisateur au serveur socket
+      socket.auth = { userId: session.user.id };
+
+      // Si le socket est déjà connecté, le reconnecter pour appliquer l'auth
+      if (socket.connected) {
+        socket.disconnect().connect();
+      }
+    }
+  }, [socket, session]);
 
   const [joinCode, setJoinCode] = useState('');
   const [error, setError] = useState(null);

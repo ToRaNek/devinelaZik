@@ -24,6 +24,7 @@ export default function PartieComponent({ roomCode }) {
   const [answerStatus, setAnswerStatus] = useState(null); // correct, incorrect, null
   const [leaderboard, setLeaderboard] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState('connecting'); // 'connecting', 'connected', 'error'
 
   // Récupérer les données de la salle
   useEffect(() => {
@@ -55,20 +56,35 @@ export default function PartieComponent({ roomCode }) {
 
   // Configurer les gestionnaires d'événements socket
   useEffect(() => {
-    if (!socket || !isConnected || !roomCode || !session || !room) return;
+    if (!socket || !isConnected || !roomCode || !session || !room) {
+      console.log("Waiting for socket connection...", {
+        socketExists: !!socket,
+        isConnected,
+        roomCode,
+        sessionExists: !!session,
+        roomExists: !!room
+      });
+      return;
+    }
 
     console.log('Setting up socket events for room:', roomCode);
 
-    // Rejoindre la salle
-    socket.emit('joinRoom', {
-      roomCode,
-      user: {
-        id: session.user.id,
-        name: session.user.name,
-        pseudo: session.user.pseudo || session.user.name,
-        image: session.user.image
-      }
-    });
+    // Force disconnect any previous connection to ensure clean state
+    socket.emit('leaveRoom', roomCode);
+
+    // Rejoindre la salle avec un délai court pour s'assurer que le disconnect précédent est traité
+    setTimeout(() => {
+      socket.emit('joinRoom', {
+        roomCode,
+        user: {
+          id: session.user.id,
+          name: session.user.name,
+          pseudo: session.user.pseudo || session.user.name,
+          image: session.user.image
+        }
+      });
+      setConnectionStatus('connected');
+    }, 300);
 
     // Gestionnaire pour les données de la salle
     const handleRoomData = (data) => {
@@ -198,6 +214,15 @@ export default function PartieComponent({ roomCode }) {
       setIsHost(newHostId === session.user.id);
     };
 
+    const handleError = (error) => {
+      console.error('Socket error:', error);
+      setConnectionStatus('error');
+      setMessages(prev => [...prev, {
+        system: true,
+        message: `Erreur de connexion: ${error.message || 'Connexion au serveur perdue'}`
+      }]);
+    };
+
     // Enregistrer les gestionnaires d'événements
     socket.on('roomData', handleRoomData);
     socket.on('playerJoined', handlePlayerJoined);
@@ -209,6 +234,7 @@ export default function PartieComponent({ roomCode }) {
     socket.on('answerResult', handleAnswerResult);
     socket.on('message', handleMessage);
     socket.on('hostChanged', handleHostChanged);
+    socket.on('error', handleError);
 
     // Gérer le timer
     const timerInterval = setInterval(() => {
@@ -232,9 +258,22 @@ export default function PartieComponent({ roomCode }) {
       socket.off('answerResult', handleAnswerResult);
       socket.off('message', handleMessage);
       socket.off('hostChanged', handleHostChanged);
+      socket.off('error', handleError);
       clearInterval(timerInterval);
     };
   }, [socket, isConnected, roomCode, session, players, room, totalRounds]);
+
+  // Ajoutons ce hook useEffect pour gérer les déconnexions et reconnexions
+  useEffect(() => {
+    if (!isConnected && socket) {
+      console.log("Socket disconnected, attempting to reconnect...");
+      setConnectionStatus('connecting');
+      // Tentative de reconnexion si déconnecté
+      if (!socket.connected) {
+        socket.connect();
+      }
+    }
+  }, [isConnected, socket]);
 
   // Démarrer la partie (hôte uniquement)
   const startGame = () => {
@@ -512,10 +551,12 @@ export default function PartieComponent({ roomCode }) {
                     </button>
                   </div>
                   <div className="connection-status">
-                    {isConnected ? (
+                    {connectionStatus === 'connected' ? (
                         <span className="status-connected">Connecté au serveur</span>
-                    ) : (
+                    ) : connectionStatus === 'connecting' ? (
                         <span className="status-disconnected">Connexion au serveur...</span>
+                    ) : (
+                        <span className="status-error">Erreur de connexion</span>
                     )}
                   </div>
                 </div>

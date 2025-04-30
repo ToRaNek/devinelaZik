@@ -1,7 +1,8 @@
 // pages/api/rooms/create.js
-import { getSession } from 'next-auth/react';
+import { getServerSession } from "next-auth/next";
 import { nanoid } from 'nanoid';
 import prisma from '../../../lib/prisma';
+import { authOptions } from "../auth/[...nextauth]";
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -9,15 +10,15 @@ export default async function handler(req, res) {
   }
 
   try {
-    const session = await getSession({ req });
-    
+    const session = await getServerSession(req, res, authOptions);
+
     if (!session) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
     // Generate a room code (6 characters, uppercase)
     const code = nanoid(6).toUpperCase();
-    
+
     // Create the room
     const room = await prisma.room.create({
       data: {

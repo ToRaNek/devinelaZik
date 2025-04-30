@@ -24,6 +24,7 @@ export const authOptions = {
       clientId: process.env.DISCORD_CLIENT_ID,
       clientSecret: process.env.DISCORD_CLIENT_SECRET,
     }),
+    // Add this to pages/api/auth/[...nextauth].js in the SpotifyProvider config
     SpotifyProvider({
       clientId: process.env.SPOTIFY_CLIENT_ID,
       clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
@@ -32,7 +33,15 @@ export const authOptions = {
           scope: "user-read-email user-top-read user-read-private"
         }
       },
-      profile(profile) {
+      // Add this option to catch and handle errors better
+      profile(profile, tokens) {
+        // This will help the user understand what happened if there's an error
+        if (!profile || Object.keys(profile).length === 0) {
+          throw new Error(
+              "Votre compte Spotify n'a pas été autorisé. Assurez-vous que votre email est dans la liste des utilisateurs autorisés dans le tableau de bord Spotify Developer."
+          );
+        }
+
         return {
           id: profile.id,
           name: profile.display_name || profile.id,
@@ -44,24 +53,29 @@ export const authOptions = {
   ],
   callbacks: {
     async session({ session, token, user }) {
-      // Si nous utilisons la stratégie database
+      // Make sure session.user exists
+      if (!session.user) {
+        session.user = {};
+      }
+
+      // If using database strategy
       if (user) {
         session.user.id = user.id;
         session.user.pseudo = user.pseudo || user.name;
-      }
 
-      // Add Spotify/Deezer connection info
-      try {
-        const accounts = await prisma.account.findMany({
-          where: { userId: session.user.id }
-        });
+        // Add Spotify/Deezer connection info
+        try {
+          const accounts = await prisma.account.findMany({
+            where: { userId: user.id }
+          });
 
-        session.user.spotify = accounts.some(acc => acc.provider === 'spotify');
-        session.user.deezer = accounts.some(acc => acc.provider === 'deezer');
-      } catch (error) {
-        console.error("Error fetching user accounts:", error);
-        session.user.spotify = false;
-        session.user.deezer = false;
+          session.user.spotify = accounts.some(acc => acc.provider === 'spotify');
+          session.user.deezer = accounts.some(acc => acc.provider === 'deezer');
+        } catch (error) {
+          console.error("Error fetching user accounts:", error);
+          session.user.spotify = false;
+          session.user.deezer = false;
+        }
       }
 
       return session;
@@ -73,5 +87,8 @@ export const authOptions = {
   },
 };
 
-// Cette exportation par défaut est ESSENTIELLE
-export default NextAuth(authOptions);
+// IMPORTANT: This is the correct way to export the NextAuth handler
+// with req/res parameters explicitly declared
+export default async function handler(req, res) {
+  return await NextAuth(req, res, authOptions);
+}
