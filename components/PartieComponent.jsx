@@ -180,12 +180,6 @@ export default function PartieComponent({ roomCode }) {
           return [...prev, data];
         });
 
-        // Ajouter un message système seulement si c'est un nouveau joueur
-        setMessages(prev => [...prev, {
-          system: true,
-          message: `${data.user?.pseudo || 'Someone'} a rejoint la partie!`
-        }]);
-
         // Ajouter le joueur à la liste des joueurs connus
         setJoinedPlayers(prev => new Set(prev).add(data.userId));
       }
@@ -259,6 +253,20 @@ export default function PartieComponent({ roomCode }) {
 
     const handleRoundEnd = (data) => {
       console.log('Round end:', data);
+
+      // MODIFIÉ: Mettre à jour les scores des joueurs immédiatement
+      setPlayers(currentPlayers => {
+        // Créer une map des scores pour un accès rapide
+        const scoreMap = new Map(data.scores.map(s => [s.userId, s.score]));
+
+        // Mettre à jour les scores dans la liste des joueurs
+        return currentPlayers.map(player => ({
+          ...player,
+          score: scoreMap.has(player.userId) ? scoreMap.get(player.userId) : player.score
+        }));
+      });
+
+      // Mettre à jour le leaderboard
       setLeaderboard(data.scores);
 
       if (data.nextRound) {
@@ -326,7 +334,7 @@ export default function PartieComponent({ roomCode }) {
     socket.on('hostChanged', handleHostChanged);
     socket.on('error', handleError);
 
-    // Timer interval
+    // Timer interval pour le countdown principal (indépendant du timer local dans EnhancedQuestionComponent)
     const timerInterval = setInterval(() => {
       setTimer(prev => {
         if (prev <= 0) return 0;
@@ -480,25 +488,28 @@ export default function PartieComponent({ roomCode }) {
           <div className="players-sidebar">
             <h2>Joueurs ({players.length})</h2>
             <ul className="players-list">
-              {players.map(player => (
-                  <li key={player.userId} className={`player-item ${player.userId === session.user.id ? 'current-player' : ''}`}>
-                    <div className="player-avatar">
-                      {player.user?.image ? (
-                          <img src={player.user.image} alt={player.user?.pseudo || 'Avatar'} />
-                      ) : (
-                          <div className="default-avatar">{(player.user?.pseudo || 'User')[0]}</div>
-                      )}
-                    </div>
-                    <div className="player-info">
-                  <span className="player-name">
-                    {player.user?.pseudo || 'Unknown'}
-                    {player.userId === room.hostId && <span className="host-badge">Hôte</span>}
-                    {player.userId === session.user.id && <span className="you-badge">Vous</span>}
-                  </span>
-                      <span className="player-score">Score: {player.score || 0}</span>
-                    </div>
-                  </li>
-              ))}
+              {/* Trier les joueurs par score (du plus élevé au plus bas) */}
+              {[...players]
+                  .sort((a, b) => (b.score || 0) - (a.score || 0))
+                  .map(player => (
+                      <li key={player.userId} className={`player-item ${player.userId === session.user.id ? 'current-player' : ''}`}>
+                        <div className="player-avatar">
+                          {player.user?.image ? (
+                              <img src={player.user.image} alt={player.user?.pseudo || 'Avatar'} />
+                          ) : (
+                              <div className="default-avatar">{(player.user?.pseudo || 'User')[0]}</div>
+                          )}
+                        </div>
+                        <div className="player-info">
+                      <span className="player-name">
+                        {player.user?.pseudo || 'Unknown'}
+                        {player.userId === room.hostId && <span className="host-badge">Hôte</span>}
+                        {player.userId === session.user.id && <span className="you-badge">Vous</span>}
+                      </span>
+                          <span className="player-score">Score: {player.score || 0}</span>
+                        </div>
+                      </li>
+                  ))}
             </ul>
 
             {gameStatus === 'waiting' && isHost && (

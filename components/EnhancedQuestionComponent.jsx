@@ -1,5 +1,5 @@
 // components/EnhancedQuestionComponent.jsx
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import FreeTextAnswerComponent from './FreeTextAnswerComponent';
 
 export default function EnhancedQuestionComponent({
@@ -10,9 +10,26 @@ export default function EnhancedQuestionComponent({
                                                   }) {
     const [selectedAnswer, setSelectedAnswer] = useState('');
     const [textAnswer, setTextAnswer] = useState('');
+    const [localTimer, setLocalTimer] = useState(30); // Timer local pour animation fluide
 
     // Ne rien afficher si pas de question
     if (!question) return null;
+
+    // Mettre à jour le timer local quand le timer externe change
+    useEffect(() => {
+        setLocalTimer(timer);
+    }, [timer]);
+
+    // Animation continue du timer
+    useEffect(() => {
+        if (localTimer <= 0 || answerStatus) return;
+
+        const interval = setInterval(() => {
+            setLocalTimer(prev => Math.max(0, prev - 0.1));
+        }, 100); // Mise à jour toutes les 100ms pour une animation fluide
+
+        return () => clearInterval(interval);
+    }, [localTimer, answerStatus]);
 
     const handleMultipleChoiceSubmit = () => {
         if (!selectedAnswer) return;
@@ -36,15 +53,23 @@ export default function EnhancedQuestionComponent({
         return question.question;
     };
 
+    // Calculer le pourcentage de temps restant pour la barre de progression
+    const timerPercentage = (localTimer / 30) * 100;
+
     return (
         <div className="question-container">
             <div className="question-header">
                 <h2>{getQuestionTitle()}</h2>
-                <div className={`timer-bar ${timer <= 10 ? 'timer-critical' : ''}`}>
-                    <div className="timer-progress" style={{ width: `${(timer / 30) * 100}%` }}></div>
+                <div className={`timer-bar ${localTimer <= 10 ? 'timer-critical' : ''}`}>
+                    <div
+                        className="timer-progress"
+                        style={{ width: `${timerPercentage}%` }}
+                    ></div>
                 </div>
                 <div className="timer-counter">
-                    <span className={`timer ${timer <= 10 ? 'timer-warning' : ''}`}>{timer}s</span>
+                    <span className={`timer ${localTimer <= 10 ? 'timer-warning' : ''}`}>
+                        {Math.ceil(localTimer)}s
+                    </span>
                 </div>
             </div>
 
@@ -175,7 +200,7 @@ export default function EnhancedQuestionComponent({
                     height: 100%;
                     background: #28a745;
                     border-radius: 999px;
-                    transition: width 1s linear;
+                    transition: width 0.1s linear;
                 }
 
                 .timer-critical .timer-progress {

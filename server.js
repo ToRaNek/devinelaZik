@@ -163,9 +163,21 @@ async function generateQuestionsFromAllSources(userId, count = 10, quizType = 'm
     // Éliminer les doublons potentiels
     const uniqueQuestions = removeDuplicateQuestions(allQuestions);
 
-    // Mélanger et prendre count questions
-    const shuffledQuestions = shuffleArray(uniqueQuestions);
-    const selectedQuestions = shuffledQuestions.slice(0, count);
+    // Prioritiser les questions avec des extraits audio
+    const questionsWithPreview = uniqueQuestions.filter(q => q.previewUrl);
+    const questionsWithoutPreview = uniqueQuestions.filter(q => !q.previewUrl);
+
+    // Mélanger les deux groupes séparément
+    const shuffledWithPreview = shuffleArray(questionsWithPreview);
+    const shuffledWithoutPreview = shuffleArray(questionsWithoutPreview);
+
+    // Prendre d'abord les questions avec extraits audio, puis compléter avec celles sans
+    let selectedQuestions = [...shuffledWithPreview];
+    if (selectedQuestions.length < count) {
+      selectedQuestions = [...selectedQuestions, ...shuffledWithoutPreview.slice(0, count - selectedQuestions.length)];
+    } else {
+      selectedQuestions = selectedQuestions.slice(0, count);
+    }
 
     // Réinitialiser les numéros de round
     const finalQuestions = selectedQuestions.map((q, index) => ({
@@ -174,6 +186,7 @@ async function generateQuestionsFromAllSources(userId, count = 10, quizType = 'm
     }));
 
     console.log(`${finalQuestions.length} questions générées avec succès à partir de toutes les sources`);
+    console.log(`Dont ${finalQuestions.filter(q => q.type === 'song').length} questions de type "song"`);
     return finalQuestions;
   } catch (error) {
     console.error('Erreur lors de la génération des questions:', error);
@@ -308,9 +321,25 @@ function getSampleQuestions(count, quizType = 'multiple_choice') {
     }
   ];
 
+  // Séparer et prioriser les questions de type "song" avec previewUrl
+  const songQuestionsWithPreview = questions.filter(q => q.type === 'song' && q.previewUrl);
+  const otherQuestions = questions.filter(q => !(q.type === 'song' && q.previewUrl));
+
+  // S'assurer que 70% des questions sont des chansons avec preview si possible
+  const targetSongCount = Math.min(Math.ceil(count * 0.7), songQuestionsWithPreview.length);
+  const targetOtherCount = count - targetSongCount;
+
+  // Mélanger les deux groupes
+  const shuffledSongs = shuffleArray(songQuestionsWithPreview).slice(0, targetSongCount);
+  const shuffledOthers = shuffleArray(otherQuestions).slice(0, targetOtherCount);
+
+  // Combiner et remélanger
+  let finalQuestions = [...shuffledSongs, ...shuffledOthers];
+  finalQuestions = shuffleArray(finalQuestions);
+
   if (quizType === 'multiple_choice') {
     // Ajouter des options pour les questions à choix multiples
-    questions.forEach(q => {
+    finalQuestions.forEach(q => {
       // Générer des options en incluant la bonne réponse
       let allOptions = [q.answer];
 
@@ -346,12 +375,8 @@ function getSampleQuestions(count, quizType = 'multiple_choice') {
     });
   }
 
-  // Mélanger et sélectionner le nombre demandé
-  const shuffled = shuffleArray(questions);
-  const selected = shuffled.slice(0, Math.min(count, shuffled.length));
-
-  // Mettre à jour les numéros de rounds et ajouter des IDs
-  return selected.map((q, index) => ({
+  // Numéroter les questions
+  return finalQuestions.map((q, index) => ({
     ...q,
     id: `sample-${Date.now()}-${index}`,
     round: index + 1
@@ -497,12 +522,13 @@ app.prepare().then(() => {
           user: data.user
         });
 
+        // SUPPRIMÉ: Ne plus ajouter de message quand un joueur rejoint
         // Message système
-        io.to(data.roomCode).emit('message', {
-          system: true,
-          message: `${data.user?.pseudo || 'Un joueur'} a rejoint la partie!`,
-          timestamp: Date.now()
-        });
+        // io.to(data.roomCode).emit('message', {
+        //   system: true,
+        //   message: `${data.user?.pseudo || 'Un joueur'} a rejoint la partie!`,
+        //   timestamp: Date.now()
+        // });
       } catch (error) {
         console.error('Error in joinRoom:', error);
         socket.emit('error', { message: `Failed to join room: ${error.message}` });

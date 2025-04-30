@@ -203,12 +203,13 @@ export default async function handler(req, res) {
                     timestamp: Date.now()
                 });
 
+                // SUPPRIMÉ: Ne plus envoyer de message quand un joueur rejoint
                 // Ajouter un message système dans le chat
-                io.to(roomCode).emit('message', {
-                    system: true,
-                    message: `${user.pseudo || 'Un joueur'} a rejoint la partie!`,
-                    timestamp: Date.now()
-                });
+                // io.to(roomCode).emit('message', {
+                //     system: true,
+                //     message: `${user.pseudo || 'Un joueur'} a rejoint la partie!`,
+                //     timestamp: Date.now()
+                // });
             } catch (error) {
                 console.error('Erreur lors de joinRoom:', error);
                 socket.emit('error', {message: 'Échec de l\'accès à la salle: ' + error.message});
@@ -249,6 +250,21 @@ export default async function handler(req, res) {
                     // Get questions from Spotify
                     console.log(`Generating questions from ${source} for user ${socket.userId}`);
                     questions = await generateQuestionsFromSpotify(socket.userId, rounds || 10);
+
+                    // Prioritize song questions with preview URLs
+                    const songQuestionsWithPreview = questions.filter(q => q.type === 'song' && q.previewUrl);
+                    const otherQuestions = questions.filter(q => !(q.type === 'song' && q.previewUrl));
+
+                    // Try to make 70% of questions be songs with audio if possible
+                    const targetSongCount = Math.min(Math.ceil((rounds || 10) * 0.7), songQuestionsWithPreview.length);
+                    const targetOtherCount = (rounds || 10) - targetSongCount;
+
+                    // Select and shuffle the questions
+                    const shuffledSongs = shuffleArray(songQuestionsWithPreview).slice(0, targetSongCount);
+                    const shuffledOthers = shuffleArray(otherQuestions).slice(0, targetOtherCount);
+
+                    // Combine and re-shuffle all questions
+                    questions = shuffleArray([...shuffledSongs, ...shuffledOthers]);
 
                     // Add IDs and round numbers to questions
                     questions = questions.map((q, index) => ({
@@ -465,6 +481,16 @@ export default async function handler(req, res) {
         });
     });
 
+    // Fonction utilitaire pour mélanger un tableau
+    function shuffleArray(array) {
+        const shuffled = [...array];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        return shuffled;
+    }
+
     // Function to send next question
     function sendNextQuestion(roomCode, io) {
         const gameData = activeGames.get(roomCode);
@@ -637,19 +663,57 @@ export default async function handler(req, res) {
                 answer: 'Taylor Swift',
                 artistName: 'Taylor Swift',
                 albumCover: 'https://i.scdn.co/image/ab67616d0000b273e0b64c8be3c4e804abcb2696'
+            },
+            {
+                type: 'song',
+                previewUrl: 'https://p.scdn.co/mp3-preview/3eb16018c2a700240e9dfb5a3f1834af7c33a128',
+                answer: 'Get Lucky',
+                artistName: 'Daft Punk',
+                albumCover: 'https://i.scdn.co/image/ab67616d0000b273b33d46dfa2635a47eebf63b2'
+            },
+            {
+                type: 'album',
+                answer: 'Abbey Road',
+                artistName: 'The Beatles',
+                albumCover: 'https://i.scdn.co/image/ab67616d0000b273dc30583ba717007b00cceb25'
+            },
+            {
+                type: 'artist',
+                previewUrl: 'https://p.scdn.co/mp3-preview/5a12483aa3b51331aba663131dbac8c26a4e9aef',
+                answer: 'Queen',
+                artistName: 'Queen',
+                albumCover: 'https://i.scdn.co/image/ab67616d0000b273d254ca498b52d66b80085a1e'
+            },
+            {
+                type: 'song',
+                previewUrl: 'https://p.scdn.co/mp3-preview/0c068b0d5b1d4afb4ce01c731eddfe271a4ab5bb',
+                answer: 'Bad Guy',
+                artistName: 'Billie Eilish',
+                albumCover: 'https://i.scdn.co/image/ab67616d0000b2732a038d3bf875d23e4aeaa84e'
             }
         ];
 
-        // Add IDs and round numbers
-        const selectedQuestions = questions
-            .slice(0, count)
-            .map((q, index) => ({
-                ...q,
-                id: `sample-${Date.now()}-${index}`,
-                round: index + 1
-            }));
+        // Prioritize song questions with preview URLs
+        const songQuestionsWithPreview = questions.filter(q => q.type === 'song' && q.previewUrl);
+        const otherQuestions = questions.filter(q => !(q.type === 'song' && q.previewUrl));
 
-        return selectedQuestions;
+        // Set target counts for each question type
+        const targetSongCount = Math.min(Math.ceil(count * 0.7), songQuestionsWithPreview.length);
+        const targetOtherCount = count - targetSongCount;
+
+        // Select and shuffle the questions
+        const shuffledSongs = shuffleArray(songQuestionsWithPreview).slice(0, targetSongCount);
+        const shuffledOthers = shuffleArray(otherQuestions).slice(0, targetOtherCount);
+
+        // Combine and re-shuffle all questions
+        const selectedQuestions = shuffleArray([...shuffledSongs, ...shuffledOthers]);
+
+        // Add IDs and round numbers
+        return selectedQuestions.map((q, index) => ({
+            ...q,
+            id: `sample-${Date.now()}-${index}`,
+            round: index + 1
+        }));
     }
 
     // Stocker l'instance io sur l'objet server pour réutilisation
