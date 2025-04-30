@@ -1,5 +1,4 @@
-// components/PartieComponent.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { useSession } from 'next-auth/react';
 import { useSocket } from '../lib/socketContext';
@@ -8,7 +7,9 @@ import Link from 'next/link';
 export default function PartieComponent({ roomCode }) {
   const router = useRouter();
   const { data: session } = useSession();
-  const { socket, isConnected } = useSocket();
+  const { socket, isConnected, connectionStatus, lastError, reconnect } = useSocket();
+  // Référence pour suivre si un composant est monté
+  const isMounted = useRef(true);
 
   const [players, setPlayers] = useState([]);
   const [room, setRoom] = useState(null);
@@ -24,7 +25,7 @@ export default function PartieComponent({ roomCode }) {
   const [answerStatus, setAnswerStatus] = useState(null); // correct, incorrect, null
   const [leaderboard, setLeaderboard] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [connectionStatus, setConnectionStatus] = useState('connecting'); // 'connecting', 'connected', 'error'
+  const [setConnectionStatus] = useState('connecting'); // 'connecting', 'connected', 'error'
 
   // Récupérer les données de la salle
   useEffect(() => {
@@ -55,26 +56,78 @@ export default function PartieComponent({ roomCode }) {
     fetchRoomData();
   }, [roomCode, session, router]);
 
-  // Setup socket authentication when user ID is available
+  useEffect(() => {
+    console.log("Component mounted - Connection info:", {
+      status: connectionStatus,
+      connected: isConnected,
+      socketExists: !!socket,
+      socketId: socket?.id || "none",
+      lastError
+    });
+
+    // Cleanup
+    return () => {
+      isMounted.current = false;
+      console.log("Component unmounting...");
+    };
+  }, [connectionStatus, isConnected, socket, lastError]);
+
+  // Vérifier et réagir aux changements d'état de connexion
+  useEffect(() => {
+    if (connectionStatus === 'error' && isMounted.current) {
+      console.log("Connection in error state, will auto-retry in 3s");
+      const timer = setTimeout(() => {
+        if (isMounted.current) {
+          console.log("Auto-retrying connection...");
+          reconnect();
+        }
+      }, 3000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [connectionStatus, reconnect]);
+
+  // Simplifier le setup socket authentication
   useEffect(() => {
     if (!socket || !session?.user?.id) return;
 
-    // Set auth directly
+    console.log("Authentication info updated, reconnecting with new auth...");
+
+    // Mettre à jour l'authentification et reconnecter
+    reconnect();
+  }, [socket, session, reconnect]);
+
+  // Setup socket authentication when user ID is available
+  useEffect(() => {
+    if (!socket || !session?.user?.id) {
+      console.log("Missing socket or user ID:", {
+        socketExists: !!socket,
+        userId: session?.user?.id
+      });
+      return;
+    }
+
+    // Set auth params directly
     socket.auth = { userId: session.user.id };
     console.log('Setting socket auth with userId:', session.user.id);
 
-    // Only reconnect if socket is already connected
-    // This avoids the connect/disconnect loop
-    if (socket.connected) {
-      console.log('Socket already connected, reconnecting to apply auth');
-      socket.disconnect();
-      // Add a slight delay before reconnecting
-      setTimeout(() => socket.connect(), 250);
-    } else {
-      console.log('Socket not connected, connecting with auth');
+    // Connect only if not already connected
+    if (!socket.connected) {
+      console.log('Socket not connected, connecting now');
       socket.connect();
+    } else {
+      console.log('Socket already connected:', socket.id);
     }
   }, [socket, session]);
+
+  useEffect(() => {
+    if (!socket || !session?.user?.id) return;
+
+    console.log("Authentication info updated, reconnecting with new auth...");
+
+    // Mettre à jour l'authentification et reconnecter
+    reconnect();
+  }, [socket, session, reconnect]);
 
   // Configurer les gestionnaires d'événements socket
   useEffect(() => {
@@ -378,20 +431,34 @@ export default function PartieComponent({ roomCode }) {
     );
   }
 
-  // Fonction de tentative de reconnexion manuelle
+
   const attemptReconnection = () => {
-    if (socket) {
-      console.log("Tentative de reconnexion manuelle...");
-      // Réinitialiser auth
-      socket.auth = { userId: session?.user?.id };
-      // Force reconnection
-      if (socket.connected) socket.disconnect();
-      setTimeout(() => socket.connect(), 250);
-    }
+    console.log("User requested manual reconnection");
+    reconnect();
   };
 
+  // Dans l'élément JSX où vous affichez les diagnostics de connexion
   return (
       <div className="game-container">
+        {/* Connection status */}
+        <div className="connection-status">
+          {connectionStatus === 'connected' ? (
+              <span className="status-connected">✅ Connecté au serveur (ID: {socket?.id})</span>
+          ) : connectionStatus === 'connecting' ? (
+              <span className="status-connecting">🔄 Connexion en cours...</span>
+          ) : (
+              <div>
+                <span className="status-disconnected">❌ Déconnecté: {lastError || 'Erreur inconnue'}</span>
+                <button
+                    onClick={attemptReconnection}
+                    className="btn btn-sm btn-primary reconnect-button">
+                  Reconnecter
+                </button>
+              </div>
+          )}
+        </div>
+
+        {/* Rest of the component's JSX remains the same as in the original file */}
         <header className="game-header">
           <h1>Devine la Zik - Salle: {roomCode}</h1>
           <div className="room-actions">

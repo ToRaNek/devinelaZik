@@ -49,13 +49,28 @@ services:
       DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET}
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
-      DEEZER_CLIENT_ID: "prout"
-      DEEZER_CLIENT_SECRET: "caca"
+      SOCKET_IO_ENABLED: "true"  # Ajouté pour activer Socket.IO explicitement
+      SOCKET_IO_PATH: "/socket.io"  # Chemin explicite pour Socket.IO
+      HOSTNAME: "0.0.0.0"  # Écouter sur toutes les interfaces
     depends_on:
       db_init:
         condition: service_completed_successfully
     networks:
       - app-network
+    # Configuration des limites de ressources
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+    # Redémarrage en cas d'échec
+    restart: always
+    # Configuration de la santé
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/socket-health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 networks:
   app-network:
