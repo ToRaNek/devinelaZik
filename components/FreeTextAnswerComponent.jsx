@@ -160,7 +160,7 @@ export default function FreeTextAnswerComponent({
                             className="answer-input"
                             disabled={disabled}
                             autoComplete="off"
-                            onFocus={() => userInput.trim() && setSuggestions.length > 0 && setShowSuggestions(true)}
+                            onFocus={() => userInput.trim() && suggestions.length > 0 && setShowSuggestions(true)}
                         />
 
                         {showSuggestions && suggestions.length > 0 && (
@@ -193,12 +193,12 @@ export default function FreeTextAnswerComponent({
                     position: relative;
                     width: 100%;
                 }
-                
+
                 .input-with-suggestions {
                     position: relative;
                     flex-grow: 1;
                 }
-                
+
                 .suggestions-list {
                     position: absolute;
                     top: 100%;
@@ -216,22 +216,22 @@ export default function FreeTextAnswerComponent({
                     z-index: 10;
                     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
                 }
-                
+
                 .suggestion-item {
                     padding: 10px 15px;
                     cursor: pointer;
                     transition: background-color 0.2s;
                 }
-                
+
                 .suggestion-item:hover {
                     background-color: #f8f9fa;
                 }
-                
+
                 .answer-input-group {
                     display: flex;
                     gap: 0.75rem;
                 }
-                
+
                 .answer-input {
                     flex-grow: 1;
                     padding: 0.75rem 1rem;
@@ -240,10 +240,25 @@ export default function FreeTextAnswerComponent({
                     font-size: 1rem;
                     width: 100%;
                 }
-                
+
                 .submit-answer {
                     padding: 0.75rem 1.5rem;
                     white-space: nowrap;
+                }
+
+                .answer-correct .answer-input {
+                    border-color: #28a745;
+                    background-color: #d4edda;
+                }
+
+                .answer-incorrect .answer-input {
+                    border-color: #dc3545;
+                    background-color: #f8d7da;
+                }
+
+                .answer-timeout .answer-input {
+                    border-color: #ffc107;
+                    background-color: #fff3cd;
                 }
             `}</style>
         </div>

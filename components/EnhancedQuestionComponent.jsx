@@ -26,10 +26,20 @@ export default function EnhancedQuestionComponent({
 
     const isMultipleChoice = question.quizType === 'multiple_choice';
 
+    // Amélioration du titre de question pour les questions audio
+    const getQuestionTitle = () => {
+        // Si c'est une question de type chanson avec previewUrl, améliorer le libellé
+        if (question.type === 'song' && question.previewUrl) {
+            return `Quel titre de ${question.artistName} est-ce ?`;
+        }
+        // Pour les autres types, utiliser le libellé existant
+        return question.question;
+    };
+
     return (
         <div className="question-container">
             <div className="question-header">
-                <h2>{question.question}</h2>
+                <h2>{getQuestionTitle()}</h2>
                 <div className={`timer-bar ${timer <= 10 ? 'timer-critical' : ''}`}>
                     <div className="timer-progress" style={{ width: `${(timer / 30) * 100}%` }}></div>
                 </div>
@@ -49,14 +59,20 @@ export default function EnhancedQuestionComponent({
                 )}
 
                 {question.type === 'song' && (
-                    <div className="album-cover">
-                        <img
-                            src={question.albumCover || '/placeholder-album.png'}
-                            alt="Album cover"
-                        />
+                    <div className="audio-player">
                         {question.previewUrl && (
                             <audio src={question.previewUrl} controls autoPlay></audio>
                         )}
+                        {question.albumCover && (
+                            <img
+                                src={question.albumCover || '/placeholder-album.png'}
+                                alt="Album cover"
+                                className="question-album-cover"
+                            />
+                        )}
+                        <div className="hint">
+                            <p>Écoutez l'extrait et devinez le titre...</p>
+                        </div>
                     </div>
                 )}
 
@@ -79,6 +95,8 @@ export default function EnhancedQuestionComponent({
                                 key={index}
                                 className={`option-button ${selectedAnswer === option ? 'selected' : ''} ${
                                     answerStatus === 'correct' && option === question.answer ? 'correct' : ''
+                                } ${
+                                    answerStatus === 'incorrect' && option === question.answer ? 'correct' : ''
                                 } ${
                                     answerStatus === 'incorrect' && option === selectedAnswer ? 'incorrect' : ''
                                 }`}
@@ -133,18 +151,18 @@ export default function EnhancedQuestionComponent({
                     padding: 1.5rem;
                     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
                 }
-                
+
                 .question-header {
                     margin-bottom: 1.5rem;
                 }
-                
+
                 .question-header h2 {
                     margin-top: 0;
                     margin-bottom: 0.75rem;
                     font-size: 1.5rem;
                     color: #333;
                 }
-                
+
                 .timer-bar {
                     height: 6px;
                     background: #e9ecef;
@@ -152,23 +170,23 @@ export default function EnhancedQuestionComponent({
                     overflow: hidden;
                     margin-bottom: 0.5rem;
                 }
-                
+
                 .timer-progress {
                     height: 100%;
                     background: #28a745;
                     border-radius: 999px;
                     transition: width 1s linear;
                 }
-                
+
                 .timer-critical .timer-progress {
                     background: #dc3545;
                 }
-                
+
                 .timer-counter {
                     display: flex;
                     justify-content: flex-end;
                 }
-                
+
                 .timer {
                     font-weight: 700;
                     padding: 0.25rem 0.75rem;
@@ -177,12 +195,12 @@ export default function EnhancedQuestionComponent({
                     border-radius: 999px;
                     font-size: 0.875rem;
                 }
-                
+
                 .timer-warning {
                     background: #dc3545;
                     animation: pulse 1s infinite;
                 }
-                
+
                 @keyframes pulse {
                     0%, 100% {
                         opacity: 1;
@@ -191,53 +209,57 @@ export default function EnhancedQuestionComponent({
                         opacity: 0.7;
                     }
                 }
-                
+
                 .media-container {
                     display: flex;
                     justify-content: center;
                     margin-bottom: 2rem;
                 }
-                
+
                 .audio-player {
                     width: 100%;
                     max-width: 400px;
                     text-align: center;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
                 }
-                
+
                 .audio-player audio {
                     width: 100%;
                     margin-bottom: 1rem;
                 }
-                
+
                 .hint {
                     font-style: italic;
                     color: #6c757d;
+                    margin-top: 0.5rem;
                 }
-                
+
                 .album-cover {
                     text-align: center;
                 }
-                
-                .album-cover img {
+
+                .album-cover img, .question-album-cover {
                     max-width: 250px;
                     height: auto;
                     border-radius: 8px;
                     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
                     margin-bottom: 1rem;
                 }
-                
-                .album-cover audio {
-                    width: 100%;
-                    max-width: 300px;
+
+                .question-album-cover {
+                    max-width: 200px;
+                    margin-top: 1rem;
                 }
-                
+
                 .options-grid {
                     display: grid;
                     grid-template-columns: repeat(2, 1fr);
                     gap: 1rem;
                     margin-bottom: 1.5rem;
                 }
-                
+
                 .option-button {
                     padding: 1rem;
                     border: 2px solid #dee2e6;
@@ -248,38 +270,38 @@ export default function EnhancedQuestionComponent({
                     transition: all 0.2s;
                     text-align: center;
                 }
-                
+
                 .option-button:hover:not(:disabled) {
                     border-color: #007bff;
                     background: #f8f9fa;
                 }
-                
+
                 .option-button.selected {
                     border-color: #007bff;
                     background: #e6f2ff;
                 }
-                
+
                 .option-button.correct {
                     border-color: #28a745;
                     background: #d4edda;
                 }
-                
+
                 .option-button.incorrect {
                     border-color: #dc3545;
                     background: #f8d7da;
                 }
-                
+
                 .option-button:disabled {
                     opacity: 0.7;
                     cursor: default;
                 }
-                
+
                 .submit-button {
                     width: 100%;
                     padding: 0.75rem;
                     margin-top: 1rem;
                 }
-                
+
                 .answer-feedback {
                     margin-top: 1.5rem;
                     padding: 1rem;
@@ -287,22 +309,22 @@ export default function EnhancedQuestionComponent({
                     text-align: center;
                     font-weight: 500;
                 }
-                
+
                 .answer-feedback.correct {
                     background: #d4edda;
                     color: #155724;
                 }
-                
+
                 .answer-feedback.incorrect {
                     background: #f8d7da;
                     color: #721c24;
                 }
-                
+
                 .answer-feedback.timeout {
                     background: #fff3cd;
                     color: #856404;
                 }
-                
+
                 .multiple-choice-container {
                     margin-top: 1.5rem;
                 }

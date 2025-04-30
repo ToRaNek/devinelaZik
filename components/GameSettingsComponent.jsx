@@ -1,10 +1,10 @@
 // components/GameSettingsComponent.jsx
 import { useState } from 'react';
 
-export default function GameSettingsComponent({ onStartGame, isHost }) {
+export default function GameSettingsComponent({ onStartGame, isHost, hideSourceSelection = true }) {
     const [rounds, setRounds] = useState(10);
     const [quizType, setQuizType] = useState('multiple_choice');
-    const [musicSource, setMusicSource] = useState('spotify');
+    const [musicSource, setMusicSource] = useState('all'); // Par défaut, utiliser toutes les sources
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const handleStartGame = () => {
@@ -70,18 +70,22 @@ export default function GameSettingsComponent({ onStartGame, isHost }) {
                 )}
             </div>
 
-            <div className="settings-group">
-                <label htmlFor="musicSource">Source des questions:</label>
-                <select
-                    id="musicSource"
-                    value={musicSource}
-                    onChange={(e) => setMusicSource(e.target.value)}
-                    className="settings-select"
-                >
-                    <option value="spotify">Spotify</option>
-                    <option value="deezer" disabled>Deezer (Bientôt disponible)</option>
-                </select>
-            </div>
+            {/* La section de sélection de source est masquée par défaut */}
+            {!hideSourceSelection && (
+                <div className="settings-group">
+                    <label htmlFor="musicSource">Source des questions:</label>
+                    <select
+                        id="musicSource"
+                        value={musicSource}
+                        onChange={(e) => setMusicSource(e.target.value)}
+                        className="settings-select"
+                    >
+                        <option value="all">Toutes les sources disponibles</option>
+                        <option value="spotify">Spotify uniquement</option>
+                        <option value="deezer" disabled>Deezer (Bientôt disponible)</option>
+                    </select>
+                </div>
+            )}
 
             <button
                 onClick={handleStartGame}
@@ -99,17 +103,17 @@ export default function GameSettingsComponent({ onStartGame, isHost }) {
                     margin-top: 1.5rem;
                     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
                 }
-                
+
                 .settings-group {
                     margin-bottom: 1.5rem;
                 }
-                
+
                 .settings-group label {
                     display: block;
                     margin-bottom: 0.5rem;
                     font-weight: 500;
                 }
-                
+
                 .settings-select {
                     width: 100%;
                     padding: 0.75rem;
@@ -118,7 +122,7 @@ export default function GameSettingsComponent({ onStartGame, isHost }) {
                     background-color: white;
                     font-size: 1rem;
                 }
-                
+
                 .settings-help {
                     margin-top: 0.5rem;
                     font-size: 0.875rem;
@@ -128,7 +132,7 @@ export default function GameSettingsComponent({ onStartGame, isHost }) {
                     border-radius: 4px;
                     border-left: 3px solid #007bff;
                 }
-                
+
                 .start-game-btn {
                     width: 100%;
                     padding: 0.75rem;

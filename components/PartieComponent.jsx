@@ -13,22 +13,32 @@ export default function PartieComponent({ roomCode }) {
   const { socket, isConnected, connectionStatus, lastError, reconnect } = useSocket();
   // Référence pour suivre si un composant est monté
   const isMounted = useRef(true);
+  // Référence pour le conteneur de messages pour l'auto-scroll
+  const messagesEndRef = useRef(null);
 
+  // État des joueurs et de la salle
   const [players, setPlayers] = useState([]);
   const [room, setRoom] = useState(null);
   const [isHost, setIsHost] = useState(false);
+
+  // État du jeu
   const [gameStatus, setGameStatus] = useState('waiting'); // waiting, playing, finished
   const [currentQuestion, setCurrentQuestion] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [messageInput, setMessageInput] = useState('');
   const [timer, setTimer] = useState(0);
   const [round, setRound] = useState(0);
   const [totalRounds, setTotalRounds] = useState(10);
   const [answerStatus, setAnswerStatus] = useState(null); // correct, incorrect, timeout, null
   const [leaderboard, setLeaderboard] = useState([]);
+
+  // État de l'interface
+  const [messages, setMessages] = useState([]);
+  const [messageInput, setMessageInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [localConnectionStatus, setLocalConnectionStatus] = useState('connecting'); // 'connecting', 'connected', 'error'
   const [quizType, setQuizType] = useState('multiple_choice'); // multiple_choice, free_text
+
+  // Stockage des joueurs qui ont déjà rejoint pour éviter les messages de jointure en double
+  const [joinedPlayers, setJoinedPlayers] = useState(new Set());
 
   // Récupérer les données de la salle
   useEffect(() => {
@@ -45,6 +55,12 @@ export default function PartieComponent({ roomCode }) {
           setPlayers(data.room.players);
           setIsHost(data.room.hostId === session.user.id);
           setLoading(false);
+
+          // Initialiser la liste des joueurs déjà présents
+          const initialJoinedPlayers = new Set(
+              data.room.players.map(player => player.userId)
+          );
+          setJoinedPlayers(initialJoinedPlayers);
         } else {
           // Room not found
           alert("Cette salle n'existe pas!");
@@ -58,6 +74,13 @@ export default function PartieComponent({ roomCode }) {
 
     fetchRoomData();
   }, [roomCode, session, router]);
+
+  // Auto-scroll vers le dernier message
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
 
   // Component lifecycle logging
   useEffect(() => {
@@ -146,19 +169,26 @@ export default function PartieComponent({ roomCode }) {
 
     const handlePlayerJoined = (data) => {
       console.log('Player joined:', data);
-      setPlayers(prev => {
-        // Éviter les doublons
-        if (prev.some(p => p.userId === data.userId)) {
-          return prev;
-        }
-        return [...prev, data];
-      });
 
-      // Ajouter un message système
-      setMessages(prev => [...prev, {
-        system: true,
-        message: `${data.user?.pseudo || 'Someone'} a rejoint la partie!`
-      }]);
+      // Vérifier si le joueur est déjà connu pour éviter les doublons
+      if (!joinedPlayers.has(data.userId)) {
+        setPlayers(prev => {
+          // Éviter les doublons
+          if (prev.some(p => p.userId === data.userId)) {
+            return prev;
+          }
+          return [...prev, data];
+        });
+
+        // Ajouter un message système seulement si c'est un nouveau joueur
+        setMessages(prev => [...prev, {
+          system: true,
+          message: `${data.user?.pseudo || 'Someone'} a rejoint la partie!`
+        }]);
+
+        // Ajouter le joueur à la liste des joueurs connus
+        setJoinedPlayers(prev => new Set(prev).add(data.userId));
+      }
     };
 
     const handlePlayerLeft = (userId) => {
@@ -172,6 +202,13 @@ export default function PartieComponent({ roomCode }) {
           system: true,
           message: `${player.user?.pseudo || 'Someone'} a quitté la partie.`
         }]);
+
+        // Retirer le joueur de la liste des joueurs connus
+        setJoinedPlayers(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(userId);
+          return newSet;
+        });
       }
     };
 
@@ -313,7 +350,7 @@ export default function PartieComponent({ roomCode }) {
       socket.off('error', handleError);
       clearInterval(timerInterval);
     };
-  }, [socket, isConnected, roomCode, session, players, room, totalRounds, reconnect]);
+  }, [socket, isConnected, roomCode, session, players, room, totalRounds, reconnect, joinedPlayers]);
 
   // Démarrer la partie (hôte uniquement)
   const startGame = (settings) => {
@@ -332,7 +369,8 @@ export default function PartieComponent({ roomCode }) {
       roomCode,
       rounds: settings.rounds || 10,
       quizType: settings.quizType || 'multiple_choice',
-      source: settings.source || (session.user.spotify ? 'spotify' : 'deezer')
+      // Envoyer tous les services disponibles au lieu d'un seul
+      source: 'all'  // Utiliser toutes les sources disponibles
     });
   };
 
@@ -452,11 +490,11 @@ export default function PartieComponent({ roomCode }) {
                       )}
                     </div>
                     <div className="player-info">
-                      <span className="player-name">
-                        {player.user?.pseudo || 'Unknown'}
-                        {player.userId === room.hostId && <span className="host-badge">Hôte</span>}
-                        {player.userId === session.user.id && <span className="you-badge">Vous</span>}
-                      </span>
+                  <span className="player-name">
+                    {player.user?.pseudo || 'Unknown'}
+                    {player.userId === room.hostId && <span className="host-badge">Hôte</span>}
+                    {player.userId === session.user.id && <span className="you-badge">Vous</span>}
+                  </span>
                       <span className="player-score">Score: {player.score || 0}</span>
                     </div>
                   </li>
@@ -468,6 +506,7 @@ export default function PartieComponent({ roomCode }) {
                   <GameSettingsComponent
                       onStartGame={startGame}
                       isHost={isHost}
+                      hideSourceSelection={true} // Masquer la sélection de source
                   />
                   {players.length < 2 && (
                       <p className="waiting-message">En attente d'autres joueurs...</p>
@@ -487,8 +526,8 @@ export default function PartieComponent({ roomCode }) {
                     <span className="round-counter">Round {round}/{totalRounds}</span>
                     {timer > 0 && currentQuestion && (
                         <span className={`timer ${timer <= 10 ? 'timer-warning' : ''}`}>
-                          {timer}s
-                        </span>
+                    {timer}s
+                  </span>
                     )}
                   </div>
                 </div>
@@ -513,8 +552,7 @@ export default function PartieComponent({ roomCode }) {
                         <button
                             onClick={() => startGame({
                               rounds: totalRounds,
-                              quizType: quizType,
-                              source: session.user.spotify ? 'spotify' : 'deezer'
+                              quizType: quizType
                             })}
                             className="btn btn-primary new-game-btn"
                         >
@@ -610,6 +648,8 @@ export default function PartieComponent({ roomCode }) {
                       </div>
                     </div>
                 ))}
+                {/* Élément invisible pour l'auto-scroll */}
+                <div ref={messagesEndRef} />
               </div>
               <form onSubmit={sendMessage} className="chat-form">
                 <input

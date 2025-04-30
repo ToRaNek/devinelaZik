@@ -16,6 +16,348 @@ const activeRooms = new Map();
 const activeGames = new Map();
 const activeConnections = new Map();
 
+// Fonction utilitaire pour mélanger un tableau
+function shuffleArray(array) {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+// Fonction pour éliminer les questions redondantes
+function removeDuplicateQuestions(questions) {
+  // Garder trace des artistes et titres déjà utilisés
+  const seenArtists = new Set();
+  const seenSongs = new Set();
+  const seenAlbums = new Set();
+
+  // Normaliser une chaîne pour comparaison
+  const normalize = (str) => {
+    return str.toLowerCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^\w\s]/g, '')
+        .trim();
+  };
+
+  // Filtrer les questions pour éviter trop de redondances
+  return questions.filter(question => {
+    const artistKey = normalize(question.artistName);
+
+    // Pour les questions de type "artiste"
+    if (question.type === 'artist') {
+      // Limiter le nombre de questions par artiste
+      if (seenArtists.has(artistKey)) {
+        return false; // Éviter la répétition du même artiste
+      }
+      seenArtists.add(artistKey);
+      return true;
+    }
+
+    // Pour les questions de type "chanson"
+    else if (question.type === 'song') {
+      const songKey = normalize(question.answer);
+      const combinedKey = `${artistKey}-${songKey}`;
+
+      if (seenSongs.has(combinedKey)) {
+        return false; // Éviter la répétition de la même chanson
+      }
+
+      // Limiter le nombre de chansons par artiste
+      let artistSongCount = 0;
+      seenSongs.forEach(key => {
+        if (key.startsWith(artistKey + '-')) {
+          artistSongCount++;
+        }
+      });
+
+      // Maximum 2 chansons par artiste
+      if (artistSongCount >= 2) {
+        return false;
+      }
+
+      seenSongs.add(combinedKey);
+      return true;
+    }
+
+    // Pour les questions de type "album"
+    else if (question.type === 'album') {
+      const albumKey = normalize(question.answer);
+      const combinedKey = `${artistKey}-${albumKey}`;
+
+      if (seenAlbums.has(combinedKey)) {
+        return false; // Éviter la répétition du même album
+      }
+
+      // Limiter le nombre d'albums par artiste
+      let artistAlbumCount = 0;
+      seenAlbums.forEach(key => {
+        if (key.startsWith(artistKey + '-')) {
+          artistAlbumCount++;
+        }
+      });
+
+      // Maximum 2 albums par artiste
+      if (artistAlbumCount >= 2) {
+        return false;
+      }
+
+      seenAlbums.add(combinedKey);
+      return true;
+    }
+
+    // Pour les autres types de questions
+    return true;
+  });
+}
+
+// Fonction pour générer des questions à partir de toutes les sources
+async function generateQuestionsFromAllSources(userId, count = 10, quizType = 'multiple_choice') {
+  try {
+    console.log(`Génération de ${count} questions à partir de toutes les sources pour l'utilisateur ${userId}`);
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        accounts: {
+          where: {
+            provider: { in: ['spotify', 'deezer'] }
+          }
+        }
+      }
+    });
+
+    if (!user || !user.accounts || user.accounts.length === 0) {
+      console.error('Aucun compte de musique lié trouvé pour cet utilisateur');
+      return getSampleQuestions(count, quizType);
+    }
+
+    // Collecter des questions de toutes les sources disponibles
+    let allQuestions = [];
+
+    // 1. Pour chaque compte connecté, récupérer des questions
+    for (const account of user.accounts) {
+      let sourceQuestions = [];
+
+      if (account.provider === 'spotify') {
+        // Utiliser la fonction existante pour Spotify
+        sourceQuestions = await generateEnhancedQuestions(userId, count * 2, quizType);
+      } else if (account.provider === 'deezer') {
+        // Pour Deezer - ajouter implémentation si disponible
+        // sourceQuestions = await generateDeezerQuestions(userId, count * 2, quizType);
+        // Pour l'instant, utiliser des exemples
+        sourceQuestions = getSampleQuestions(Math.floor(count / 2), quizType);
+      }
+
+      // Ajouter les questions à notre pool global
+      allQuestions = [...allQuestions, ...sourceQuestions];
+    }
+
+    // S'il n'y a pas assez de questions, compléter avec des exemples
+    if (allQuestions.length < count) {
+      const sampleQuestions = getSampleQuestions(count - allQuestions.length, quizType);
+      allQuestions = [...allQuestions, ...sampleQuestions];
+    }
+
+    // Éliminer les doublons potentiels
+    const uniqueQuestions = removeDuplicateQuestions(allQuestions);
+
+    // Mélanger et prendre count questions
+    const shuffledQuestions = shuffleArray(uniqueQuestions);
+    const selectedQuestions = shuffledQuestions.slice(0, count);
+
+    // Réinitialiser les numéros de round
+    const finalQuestions = selectedQuestions.map((q, index) => ({
+      ...q,
+      round: index + 1
+    }));
+
+    console.log(`${finalQuestions.length} questions générées avec succès à partir de toutes les sources`);
+    return finalQuestions;
+  } catch (error) {
+    console.error('Erreur lors de la génération des questions:', error);
+    return getSampleQuestions(count, quizType);
+  }
+}
+
+// Function to get sample questions if other methods fail
+function getSampleQuestions(count, quizType = 'multiple_choice') {
+  const questions = [
+    {
+      type: 'artist',
+      quizType: quizType,
+      previewUrl: 'https://p.scdn.co/mp3-preview/3eb16018c2a700240e9dfb5a3f1834af7c33a128',
+      answer: 'Daft Punk',
+      artistName: 'Daft Punk',
+      albumCover: 'https://i.scdn.co/image/ab67616d0000b273b33d46dfa2635a47eebf63b2',
+      question: "Qui est l'artiste de ce morceau ?"
+    },
+    {
+      type: 'song',
+      quizType: quizType,
+      previewUrl: 'https://p.scdn.co/mp3-preview/5a12483aa3b51331aba663131dbac8c26a4e9aef',
+      answer: 'Bohemian Rhapsody',
+      artistName: 'Queen',
+      albumCover: 'https://i.scdn.co/image/ab67616d0000b273d254ca498b52d66b80085a1e',
+      question: "Quel est ce titre de Queen ?"
+    },
+    {
+      type: 'album',
+      quizType: quizType,
+      answer: 'Thriller',
+      artistName: 'Michael Jackson',
+      albumCover: 'https://i.scdn.co/image/ab67616d0000b2734121faee8df82c526cbab2be',
+      question: "Quel est cet album de Michael Jackson ?"
+    },
+    {
+      type: 'artist',
+      quizType: quizType,
+      previewUrl: 'https://p.scdn.co/mp3-preview/0c068b0d5b1d4afb4ce01c731eddfe271a4ab5bb',
+      answer: 'Billie Eilish',
+      artistName: 'Billie Eilish',
+      albumCover: 'https://i.scdn.co/image/ab67616d0000b2732a038d3bf875d23e4aeaa84e',
+      question: "Quel est le nom de cet artiste ?"
+    },
+    {
+      type: 'song',
+      quizType: quizType,
+      previewUrl: 'https://p.scdn.co/mp3-preview/452de87e6104ded50e674050d56c7269336a3fe9',
+      answer: 'Blinding Lights',
+      artistName: 'The Weeknd',
+      albumCover: 'https://i.scdn.co/image/ab67616d0000b27348a42a53ea8e0d9e98423a6d',
+      question: "Quel est ce titre de The Weeknd ?"
+    },
+    {
+      type: 'album',
+      quizType: quizType,
+      answer: 'The Dark Side of the Moon',
+      artistName: 'Pink Floyd',
+      albumCover: 'https://i.scdn.co/image/ab67616d0000b273ea7caaff71dea1051d49b2fe',
+      question: "Quel est cet album de Pink Floyd ?"
+    },
+    {
+      type: 'artist',
+      quizType: quizType,
+      previewUrl: 'https://p.scdn.co/mp3-preview/77a5b67f66c1f18353ea5afc6e8628c145267d4a',
+      answer: 'Kendrick Lamar',
+      artistName: 'Kendrick Lamar',
+      albumCover: 'https://i.scdn.co/image/ab67616d0000b2732e8ed79e177ff6011076f5f0',
+      question: "Quel est le nom de cet artiste ?"
+    },
+    {
+      type: 'song',
+      quizType: quizType,
+      previewUrl: 'https://p.scdn.co/mp3-preview/7df27a9a6ac1d6c8767b61b38dc37ba5cfa3f19c',
+      answer: 'Imagine',
+      artistName: 'John Lennon',
+      albumCover: 'https://i.scdn.co/image/ab67616d0000b2736750daf5f4576e3c25d5c7aa',
+      question: "Quel est ce titre de John Lennon ?"
+    },
+    {
+      type: 'album',
+      quizType: quizType,
+      answer: 'Nevermind',
+      artistName: 'Nirvana',
+      albumCover: 'https://i.scdn.co/image/ab67616d0000b27336c5417732e53e23cb219246',
+      question: "Quel est cet album de Nirvana ?"
+    },
+    {
+      type: 'artist',
+      quizType: quizType,
+      previewUrl: 'https://p.scdn.co/mp3-preview/8de4f9d9671c42e7e6f3ecf0edcba3f08d5593f2',
+      answer: 'Taylor Swift',
+      artistName: 'Taylor Swift',
+      albumCover: 'https://i.scdn.co/image/ab67616d0000b273e0b64c8be3c4e804abcb2696',
+      question: "Quel est le nom de cet artiste ?"
+    },
+    {
+      type: 'song',
+      quizType: quizType,
+      previewUrl: 'https://p.scdn.co/mp3-preview/3eb16018c2a700240e9dfb5a3f1834af7c33a128',
+      answer: 'Get Lucky',
+      artistName: 'Daft Punk',
+      albumCover: 'https://i.scdn.co/image/ab67616d0000b273b33d46dfa2635a47eebf63b2',
+      question: "Quel est ce titre de Daft Punk ?"
+    },
+    {
+      type: 'album',
+      quizType: quizType,
+      answer: 'Abbey Road',
+      artistName: 'The Beatles',
+      albumCover: 'https://i.scdn.co/image/ab67616d0000b273dc30583ba717007b00cceb25',
+      question: "Quel est cet album des Beatles ?"
+    },
+    {
+      type: 'artist',
+      quizType: quizType,
+      previewUrl: 'https://p.scdn.co/mp3-preview/5a12483aa3b51331aba663131dbac8c26a4e9aef',
+      answer: 'Queen',
+      artistName: 'Queen',
+      albumCover: 'https://i.scdn.co/image/ab67616d0000b273d254ca498b52d66b80085a1e',
+      question: "Qui est l'artiste de ce morceau ?"
+    },
+    {
+      type: 'song',
+      quizType: quizType,
+      previewUrl: 'https://p.scdn.co/mp3-preview/0c068b0d5b1d4afb4ce01c731eddfe271a4ab5bb',
+      answer: 'Bad Guy',
+      artistName: 'Billie Eilish',
+      albumCover: 'https://i.scdn.co/image/ab67616d0000b2732a038d3bf875d23e4aeaa84e',
+      question: "Quel est ce titre de Billie Eilish ?"
+    }
+  ];
+
+  if (quizType === 'multiple_choice') {
+    // Ajouter des options pour les questions à choix multiples
+    questions.forEach(q => {
+      // Générer des options en incluant la bonne réponse
+      let allOptions = [q.answer];
+
+      // Ajouter des options incorrectes selon le type de question
+      if (q.type === 'artist') {
+        const artistOptions = ['Daft Punk', 'Queen', 'Michael Jackson', 'Billie Eilish',
+          'The Weeknd', 'Kendrick Lamar', 'John Lennon', 'Nirvana',
+          'Taylor Swift', 'The Beatles', 'Radiohead', 'Adele']
+            .filter(a => a !== q.answer);
+
+        // Sélectionner 3 options aléatoires
+        allOptions = [...allOptions, ...shuffleArray(artistOptions).slice(0, 3)];
+      }
+      else if (q.type === 'song') {
+        const songOptions = ['Bohemian Rhapsody', 'Blinding Lights', 'Imagine', 'Bad Guy',
+          'Get Lucky', 'Thriller', 'Smells Like Teen Spirit', 'Shake It Off',
+          'Yesterday', 'Creep', 'Hello', 'Billie Jean']
+            .filter(s => s !== q.answer);
+
+        allOptions = [...allOptions, ...shuffleArray(songOptions).slice(0, 3)];
+      }
+      else if (q.type === 'album') {
+        const albumOptions = ['Thriller', 'The Dark Side of the Moon', 'Nevermind', 'Abbey Road',
+          'Random Access Memories', 'A Night at the Opera', 'When We All Fall Asleep...',
+          'After Hours', 'To Pimp a Butterfly', 'Imagine', 'Let It Be', '25']
+            .filter(a => a !== q.answer);
+
+        allOptions = [...allOptions, ...shuffleArray(albumOptions).slice(0, 3)];
+      }
+
+      // Mélanger les options
+      q.options = shuffleArray(allOptions);
+    });
+  }
+
+  // Mélanger et sélectionner le nombre demandé
+  const shuffled = shuffleArray(questions);
+  const selected = shuffled.slice(0, Math.min(count, shuffled.length));
+
+  // Mettre à jour les numéros de rounds et ajouter des IDs
+  return selected.map((q, index) => ({
+    ...q,
+    id: `sample-${Date.now()}-${index}`,
+    round: index + 1
+  }));
+}
+
 app.prepare().then(() => {
   const server = express();
   const httpServer = http.createServer(server);
@@ -191,12 +533,12 @@ app.prepare().then(() => {
           return;
         }
 
-        // Generate questions using enhanced generator
+        // Generate questions using all sources
         let questions = [];
         try {
-          // Get questions from Spotify with the specified quiz type
-          console.log(`Generating questions from ${data.source} for user ${socket.userId} with quiz type ${data.quizType || 'multiple_choice'}`);
-          questions = await generateEnhancedQuestions(
+          // Utiliser la nouvelle fonction qui combine toutes les sources
+          console.log(`Generating questions from all sources for user ${socket.userId} with quiz type ${data.quizType || 'multiple_choice'}`);
+          questions = await generateQuestionsFromAllSources(
               socket.userId,
               data.rounds || 10,
               data.quizType || 'multiple_choice'
@@ -205,11 +547,11 @@ app.prepare().then(() => {
           console.log(`Generated ${questions.length} questions of type ${data.quizType || 'multiple_choice'}`);
         } catch (error) {
           console.error('Error generating questions:', error);
-          // Fallback to sample questions (handled by the enhanced generator)
-          questions = [];
+          // Fallback to sample questions
+          questions = getSampleQuestions(data.rounds || 10, data.quizType || 'multiple_choice');
         }
 
-        // If no questions were generated, log error and notify user
+        // Si aucune question n'a été générée, loguer erreur et notifier l'utilisateur
         if (questions.length === 0) {
           console.error('Failed to generate any questions');
           socket.emit('error', { message: 'Impossible de générer des questions. Veuillez réessayer.' });
@@ -230,7 +572,8 @@ app.prepare().then(() => {
             user: player.user,
             score: 0
           })),
-          startTime: Date.now()
+          startTime: Date.now(),
+          playersAnswered: new Set() // Initialiser la liste des joueurs ayant répondu
         };
 
         activeGames.set(data.roomCode, gameData);
@@ -281,6 +624,12 @@ app.prepare().then(() => {
           return;
         }
 
+        // Si le joueur a déjà répondu, ignorer
+        if (gameData.playersAnswered.has(userId)) {
+          console.log(`Player ${userId} already answered this question`);
+          return;
+        }
+
         // Check answer (allow for case and accent insensitivity)
         const normalizeString = (str) => {
           return str.toLowerCase()
@@ -293,6 +642,9 @@ app.prepare().then(() => {
         const correctAnswer = normalizeString(currentQuestion.answer);
 
         const isCorrect = userAnswer === correctAnswer;
+
+        // Marquer ce joueur comme ayant répondu
+        gameData.playersAnswered.add(userId);
 
         // Calculate points (more points for faster answers)
         let points = 0;
@@ -308,9 +660,6 @@ app.prepare().then(() => {
             playerScore.score += points;
           }
 
-          // Move to next question
-          clearTimeout(gameData.questionTimer);
-
           // Notify player of correct answer
           socket.emit('answerResult', {
             correct: true,
@@ -323,18 +672,45 @@ app.prepare().then(() => {
             system: true,
             message: `${gameData.scores.find(s => s.userId === userId)?.user?.pseudo || 'Un joueur'} a trouvé la bonne réponse!`
           });
-
-          // Wait a moment before next question
-          setTimeout(() => {
-            sendNextQuestion(roomCode, io);
-          }, 3000);
         } else {
-          // Incorrect answer
+          // Incorrect answer - montrer immédiatement la bonne réponse
           socket.emit('answerResult', {
             correct: false,
             points: 0,
-            answer: null // Don't reveal correct answer yet
+            answer: currentQuestion.answer // Envoyer la bonne réponse immédiatement
           });
+        }
+
+        // Vérifier si tous les joueurs ont répondu
+        const playersInRoom = activeRooms.get(roomCode)?.players || [];
+        const totalPlayers = playersInRoom.length;
+
+        if (gameData.playersAnswered.size >= totalPlayers) {
+          // Tous les joueurs ont répondu, passer à la question suivante
+          console.log(`Tous les joueurs ont répondu à la question ${currentQuestion.id}`);
+
+          // Annuler le timer existant
+          clearTimeout(gameData.questionTimer);
+
+          // Passer à la question suivante après un court délai
+          setTimeout(() => {
+            // Envoyer les scores actuels
+            io.to(roomCode).emit('roundEnd', {
+              round: gameData.currentRound,
+              nextRound: gameData.currentRound < gameData.totalRounds ? gameData.currentRound + 1 : null,
+              scores: gameData.scores.sort((a, b) => b.score - a.score),
+              isLastRound: gameData.currentRound >= gameData.totalRounds
+            });
+
+            // Passer à la question suivante si ce n'est pas la dernière
+            if (gameData.currentRound < gameData.totalRounds) {
+              setTimeout(() => {
+                sendNextQuestion(roomCode, io);
+              }, 3000);
+            } else {
+              endGame(roomCode, io);
+            }
+          }, 3000);
         }
       } catch (error) {
         console.error('Error processing answer:', error);
@@ -365,7 +741,6 @@ app.prepare().then(() => {
 
           // Notify clients of host change
           io.to(roomCode).emit('hostChanged', roomData.hostId);
-
           io.to(roomCode).emit('message', {
             system: true,
             message: `${roomData.players.find(p => p.userId === roomData.hostId)?.user?.pseudo || 'Un joueur'} est maintenant l'hôte de la partie.`
@@ -448,11 +823,17 @@ app.prepare().then(() => {
     const currentQuestion = gameData.questions[gameData.currentRound - 1];
     currentQuestion.sentAt = Date.now();
 
+    // Réinitialiser la liste des joueurs ayant répondu
+    gameData.playersAnswered = new Set();
+
     console.log(`Sending question for round ${gameData.currentRound}/${gameData.totalRounds} to room ${roomCode}`);
 
     // Clone the question and remove the answer
     const questionForClient = { ...currentQuestion };
-    delete questionForClient.answer; // Don't send the answer to clients!
+    // Don't delete the answer for free text questions as it's needed for autocomplete
+    if (gameData.quizType === 'multiple_choice') {
+      delete questionForClient.answer; // Don't send the answer to clients in multiple choice mode
+    }
 
     // Send question to all clients
     io.to(roomCode).emit('newQuestion', questionForClient);
