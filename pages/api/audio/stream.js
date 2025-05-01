@@ -1,5 +1,5 @@
 // pages/api/audio/stream.js
-import { searchYouTubeVideo, getYouTubeAudioStream } from '../../../lib/youtubeUtils';
+const { searchYouTubeVideo, getYouTubeAudioStream } = require('../../../lib/youtubeUtils');
 
 export default async function handler(req, res) {
     // Support uniquement des requêtes GET
@@ -27,7 +27,7 @@ export default async function handler(req, res) {
         res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache d'un jour
 
         // Diffuser le flux audio
-        const audioStream = getYouTubeAudioStream(videoId);
+        const audioStream = await getYouTubeAudioStream(videoId);
         audioStream.pipe(res);
 
         // Gérer les erreurs de flux
