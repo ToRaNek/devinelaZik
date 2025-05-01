@@ -5,6 +5,7 @@ const next = require('next');
 const { Server } = require('socket.io');
 const { PrismaClient } = require('@prisma/client');
 const { generateEnhancedQuestions } = require('./lib/enhancedSpotifyUtils');
+const { enrichQuestionsWithPreviews } = require('./lib/spotifyEnricher');
 
 const prisma = new PrismaClient();
 const dev = process.env.NODE_ENV !== 'production';
@@ -135,14 +136,38 @@ async function generateQuestionsFromAllSources(userId, count = 10, quizType = 'm
 
     // Collecter des questions de toutes les sources disponibles
     let allQuestions = [];
+    let allTracks = []; // Collecter toutes les pistes pour enrichir les questions
 
     // 1. Pour chaque compte connecté, récupérer des questions
     for (const account of user.accounts) {
       let sourceQuestions = [];
 
       if (account.provider === 'spotify') {
-        // Utiliser la fonction existante pour Spotify
-        sourceQuestions = await generateEnhancedQuestions(userId, count * 2, quizType);
+        // Récupérer les pistes Spotify
+        try {
+          const topTracks = await getUserTopTracks(userId, 'medium_term', 50);
+          const savedTracks = await getUserSavedTracks(userId, 50);
+          const recentTracks = await getRecentlyPlayedTracks(userId, 50);
+
+          // Combiner toutes les pistes (en évitant les doublons)
+          const trackIds = new Set();
+          const uniqueTracks = [];
+
+          [...topTracks, ...savedTracks, ...recentTracks].forEach(track => {
+            if (!trackIds.has(track.id)) {
+              trackIds.add(track.id);
+              uniqueTracks.push(track);
+            }
+          });
+
+          // Ajouter à la collection globale
+          allTracks.push(...uniqueTracks);
+
+          // Générer les questions avec l'utilitaire existant
+          sourceQuestions = await generateEnhancedQuestions(userId, count * 2, quizType);
+        } catch (error) {
+          console.error('Erreur lors de la récupération des pistes Spotify:', error);
+        }
       } else if (account.provider === 'deezer') {
         // Pour Deezer - ajouter implémentation si disponible
         // sourceQuestions = await generateDeezerQuestions(userId, count * 2, quizType);
@@ -152,6 +177,11 @@ async function generateQuestionsFromAllSources(userId, count = 10, quizType = 'm
 
       // Ajouter les questions à notre pool global
       allQuestions = [...allQuestions, ...sourceQuestions];
+    }
+
+    // Enrichir les questions avec les IDs Spotify
+    if (allTracks.length > 0) {
+      allQuestions = enrichQuestionsWithSpotifyIds(allQuestions, allTracks);
     }
 
     // S'il n'y a pas assez de questions, compléter avec des exemples
@@ -187,6 +217,9 @@ async function generateQuestionsFromAllSources(userId, count = 10, quizType = 'm
 
     console.log(`${finalQuestions.length} questions générées avec succès à partir de toutes les sources`);
     console.log(`Dont ${finalQuestions.filter(q => q.type === 'song').length} questions de type "song"`);
+    console.log(`Dont ${finalQuestions.filter(q => q.previewUrl).length} questions avec prévisualisation audio`);
+    console.log(`Dont ${finalQuestions.filter(q => q.spotifyTrackId).length} questions avec ID Spotify`);
+
     return finalQuestions;
   } catch (error) {
     console.error('Erreur lors de la génération des questions:', error);
@@ -383,6 +416,38 @@ function getSampleQuestions(count, quizType = 'multiple_choice') {
   }));
 }
 
+// Fonction modifiée qui enrichit vos questions existantes
+async function prepareQuestionsWithAudio(questions, userId) {
+  try {
+    console.log(`Préparation de ${questions.length} questions avec audio pour l'utilisateur ${userId}`);
+
+    // 1. Filtrer les questions qui ont besoin d'être enrichies (celles sans prévisualisation)
+    const questionsToEnrich = questions.filter(q =>
+        !q.previewUrl && (q.type === 'song' || q.type === 'artist')
+    );
+
+    console.log(`${questionsToEnrich.length} questions à enrichir avec prévisualisations Spotify`);
+
+    if (questionsToEnrich.length === 0) {
+      return questions; // Si aucune question à enrichir, retourner les questions d'origine
+    }
+
+    // 2. Enrichir les questions avec des prévisualisations
+    const enrichedQuestions = await enrichQuestionsWithPreviews(questions, userId);
+
+    // 3. Compter combien de questions ont été enrichies
+    const newPreviewCount = enrichedQuestions.filter(q => q.previewUrl).length -
+        (questions.length - questionsToEnrich.length);
+
+    console.log(`${newPreviewCount} nouvelles prévisualisations ajoutées`);
+
+    return enrichedQuestions;
+  } catch (error) {
+    console.error('Erreur lors de la préparation des questions avec audio:', error);
+    return questions; // En cas d'erreur, retourner les questions d'origine
+  }
+}
+
 app.prepare().then(() => {
   const server = express();
   const httpServer = http.createServer(server);
@@ -549,7 +614,7 @@ app.prepare().then(() => {
     // Démarrer une partie
     socket.on('startGame', async (data) => {
       try {
-        console.log(`Game start requested in room ${data.roomCode} by ${socket.userId}`);
+        console.log(`Démarrage de partie demandé dans la salle ${data.roomCode} par ${socket.userId}`);
         const roomData = activeRooms.get(data.roomCode);
 
         // Verify host
@@ -559,29 +624,21 @@ app.prepare().then(() => {
           return;
         }
 
-        // Generate questions using all sources
+        // Generate questions using your existing function
         let questions = [];
         try {
-          // Utiliser la nouvelle fonction qui combine toutes les sources
-          console.log(`Generating questions from all sources for user ${socket.userId} with quiz type ${data.quizType || 'multiple_choice'}`);
-          questions = await generateQuestionsFromAllSources(
-              socket.userId,
-              data.rounds || 10,
-              data.quizType || 'multiple_choice'
-          );
+          console.log(`Generating questions for user ${socket.userId}`);
 
-          console.log(`Generated ${questions.length} questions of type ${data.quizType || 'multiple_choice'}`);
+          // Utiliser votre fonction existante pour générer les questions de base
+          questions = await generateQuestionsFromSpotify(socket.userId, data.rounds || 10);
+
+          // Enrichir les questions avec des prévisualisations Spotify
+          questions = await prepareQuestionsWithAudio(questions, socket.userId);
+
+          console.log(`Generated ${questions.length} questions`);
         } catch (error) {
           console.error('Error generating questions:', error);
-          // Fallback to sample questions
-          questions = getSampleQuestions(data.rounds || 10, data.quizType || 'multiple_choice');
-        }
-
-        // Si aucune question n'a été générée, loguer erreur et notifier l'utilisateur
-        if (questions.length === 0) {
-          console.error('Failed to generate any questions');
-          socket.emit('error', { message: 'Impossible de générer des questions. Veuillez réessayer.' });
-          return;
+          questions = getSampleQuestions(data.rounds || 10);
         }
 
         // Store game data
@@ -592,14 +649,12 @@ app.prepare().then(() => {
           currentRound: 0,
           totalRounds: data.rounds || 10,
           questions: questions,
-          quizType: data.quizType || 'multiple_choice',
           scores: roomData.players.map(player => ({
             userId: player.userId,
             user: player.user,
             score: 0
           })),
-          startTime: Date.now(),
-          playersAnswered: new Set() // Initialiser la liste des joueurs ayant répondu
+          startTime: Date.now()
         };
 
         activeGames.set(data.roomCode, gameData);
@@ -610,7 +665,6 @@ app.prepare().then(() => {
         // Inform clients that game is starting
         io.to(data.roomCode).emit('gameStarted', {
           rounds: data.rounds || 10,
-          quizType: data.quizType || 'multiple_choice',
           players: roomData.players.length,
           timestamp: Date.now()
         });

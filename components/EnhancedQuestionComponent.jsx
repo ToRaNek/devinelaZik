@@ -1,5 +1,4 @@
-// components/EnhancedQuestionComponent.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import FreeTextAnswerComponent from './FreeTextAnswerComponent';
 
 export default function EnhancedQuestionComponent({
@@ -10,7 +9,9 @@ export default function EnhancedQuestionComponent({
                                                   }) {
     const [selectedAnswer, setSelectedAnswer] = useState('');
     const [textAnswer, setTextAnswer] = useState('');
-    const [localTimer, setLocalTimer] = useState(30); // Timer local pour animation fluide
+    const [localTimer, setLocalTimer] = useState(30);
+    const [audioError, setAudioError] = useState(false);
+    const audioRef = useRef(null);
 
     // Ne rien afficher si pas de question
     if (!question) return null;
@@ -26,10 +27,39 @@ export default function EnhancedQuestionComponent({
 
         const interval = setInterval(() => {
             setLocalTimer(prev => Math.max(0, prev - 0.1));
-        }, 100); // Mise à jour toutes les 100ms pour une animation fluide
+        }, 100);
 
         return () => clearInterval(interval);
     }, [localTimer, answerStatus]);
+
+    // Gestion de l'audio avec lecture automatique
+    useEffect(() => {
+        if (question && question.previewUrl && audioRef.current) {
+            // Réinitialiser les erreurs audio
+            setAudioError(false);
+
+            // Utiliser directement l'URL de prévisualisation
+            audioRef.current.src = question.previewUrl;
+
+            // Lecture automatique
+            const playPromise = audioRef.current.play();
+
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    console.error('Erreur de lecture automatique:', error);
+                    setAudioError(true);
+                });
+            }
+        }
+
+        // Nettoyage de l'audio lors du changement de question
+        return () => {
+            if (audioRef.current) {
+                audioRef.current.pause();
+                audioRef.current.src = '';
+            }
+        };
+    }, [question]);
 
     const handleMultipleChoiceSubmit = () => {
         if (!selectedAnswer) return;
@@ -45,11 +75,9 @@ export default function EnhancedQuestionComponent({
 
     // Amélioration du titre de question pour les questions audio
     const getQuestionTitle = () => {
-        // Si c'est une question de type chanson avec previewUrl, améliorer le libellé
         if (question.type === 'song' && question.previewUrl) {
             return `Quel titre de ${question.artistName} est-ce ?`;
         }
-        // Pour les autres types, utiliser le libellé existant
         return question.question;
     };
 
@@ -76,9 +104,20 @@ export default function EnhancedQuestionComponent({
             <div className="media-container">
                 {question.type === 'artist' && question.previewUrl && (
                     <div className="audio-player">
-                        <audio src={question.previewUrl} controls autoPlay></audio>
+                        <audio
+                            ref={audioRef}
+                            src={question.previewUrl}
+                            controls
+                            autoPlay
+                            onError={() => setAudioError(true)}
+                        ></audio>
                         <div className="hint">
                             <p>Écoutez l'extrait et devinez l'artiste...</p>
+                            {audioError && (
+                                <p className="audio-error">
+                                    Problème de lecture audio. Essayez de cliquer sur Play.
+                                </p>
+                            )}
                         </div>
                     </div>
                 )}
@@ -86,7 +125,13 @@ export default function EnhancedQuestionComponent({
                 {question.type === 'song' && (
                     <div className="audio-player">
                         {question.previewUrl && (
-                            <audio src={question.previewUrl} controls autoPlay></audio>
+                            <audio
+                                ref={audioRef}
+                                src={question.previewUrl}
+                                controls
+                                autoPlay
+                                onError={() => setAudioError(true)}
+                            ></audio>
                         )}
                         {question.albumCover && (
                             <img
@@ -97,6 +142,11 @@ export default function EnhancedQuestionComponent({
                         )}
                         <div className="hint">
                             <p>Écoutez l'extrait et devinez le titre...</p>
+                            {audioError && (
+                                <p className="audio-error">
+                                    Problème de lecture audio. Essayez de cliquer sur Play.
+                                </p>
+                            )}
                         </div>
                     </div>
                 )}
@@ -111,7 +161,7 @@ export default function EnhancedQuestionComponent({
                 )}
             </div>
 
-            {/* Afficher le bon système de réponse selon le type de quiz */}
+            {/* Système de réponse */}
             {isMultipleChoice ? (
                 <div className="multiple-choice-container">
                     <div className="options-grid">
@@ -151,6 +201,7 @@ export default function EnhancedQuestionComponent({
                 />
             )}
 
+            {/* Feedback sur les réponses */}
             {answerStatus === 'correct' && (
                 <div className="answer-feedback correct">
                     <span>Bravo! Réponse correcte</span>
@@ -258,6 +309,12 @@ export default function EnhancedQuestionComponent({
                 .hint {
                     font-style: italic;
                     color: #6c757d;
+                    margin-top: 0.5rem;
+                }
+
+                .audio-error {
+                    color: #dc3545;
+                    font-weight: bold;
                     margin-top: 0.5rem;
                 }
 
