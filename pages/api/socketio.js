@@ -3,6 +3,8 @@ import { Server as SocketIOServer } from 'socket.io';
 import { getToken } from "next-auth/jwt";
 import prisma from '../../lib/prisma';
 const { generateQuestionsFromSpotify } = require('../../lib/spotifyUtils');
+const { generateMultipleChoiceQuestions, generateFreeTextQuestions } = require('../../lib/enhancedSpotifyUtils');
+
 // Store active data in memory
 const activeRooms = new Map();
 const activeGames = new Map();
@@ -117,8 +119,6 @@ export default async function handler(req, res) {
         // Rejoindre une salle
         socket.on('joinRoom', async ({roomCode, user}) => {
             try {
-                console.log(`Utilisateur ${user.id} rejoint la salle ${roomCode}`);
-
                 // Quitter d'abord toutes les autres salles
                 for (const room of [...socket.rooms]) {
                     if (room !== socket.id) {
@@ -232,7 +232,7 @@ export default async function handler(req, res) {
         });
 
         // Démarrer une partie (hôte uniquement)
-        socket.on('startGame', async ({roomCode, rounds, source}) => {
+        socket.on('startGame', async ({roomCode, rounds, quizType, source}) => {
             try {
                 console.log(`Démarrage de partie demandé dans la salle ${roomCode} par ${socket.userId}`);
                 const roomData = activeRooms.get(roomCode);
@@ -250,6 +250,49 @@ export default async function handler(req, res) {
                     // Get questions from Spotify
                     console.log(`Generating questions from ${source} for user ${socket.userId}`);
                     questions = await generateQuestionsFromSpotify(socket.userId, rounds || 10);
+
+                    // Si pas assez de questions ou erreur, utiliser les pistes populaires
+                    if (questions.length < (rounds || 10)) {
+                        console.log(`Pas assez de questions de Spotify (${questions.length}), complément avec des pistes populaires`);
+
+                        // Récupérer des pistes populaires
+                        const popularTracks = await getPopularTracks((rounds || 10) - questions.length);
+
+                        // Extraire les artistes et albums
+                        const artists = popularTracks
+                            .flatMap(track => track.artists)
+                            .filter((artist, index, self) =>
+                                artist && index === self.findIndex(a => a.id === artist.id)
+                            );
+
+                        const albums = popularTracks
+                            .map(track => track.album)
+                            .filter((album, index, self) =>
+                                album && index === self.findIndex(a => a.id === album.id)
+                            );
+
+                        // Générer des questions supplémentaires
+                        let additionalQuestions = [];
+                        if (quizType === 'multiple_choice') {
+                            additionalQuestions = generateMultipleChoiceQuestions(
+                                popularTracks, artists, albums, (rounds || 10) - questions.length
+                            );
+                        } else {
+                            additionalQuestions = generateFreeTextQuestions(
+                                popularTracks, artists, albums, (rounds || 10) - questions.length
+                            );
+                        }
+
+                        // Ajouter des IDs et numéros de rounds
+                        additionalQuestions = additionalQuestions.map((q, index) => ({
+                            ...q,
+                            id: `q-pop-${Date.now()}-${index}`,
+                            round: questions.length + index + 1
+                        }));
+
+                        // Combiner les questions
+                        questions = [...questions, ...additionalQuestions];
+                    }
 
                     // Prioritize song questions with preview URLs
                     const songQuestionsWithPreview = questions.filter(q => q.type === 'song' && q.previewUrl);
@@ -276,8 +319,37 @@ export default async function handler(req, res) {
                     console.log(`Generated ${questions.length} questions`);
                 } catch (error) {
                     console.error('Error generating questions:', error);
-                    // Use sample questions as fallback
-                    questions = getSampleQuestions(rounds || 10);
+
+                    // Utiliser les pistes populaires comme solution de secours
+                    console.log(`Erreur lors de la génération des questions, utilisation des pistes populaires`);
+                    const popularTracks = await getPopularTracks(rounds || 10);
+
+                    // Extraire les artistes et albums
+                    const artists = popularTracks
+                        .flatMap(track => track.artists)
+                        .filter((artist, index, self) =>
+                            artist && index === self.findIndex(a => a.id === artist.id)
+                        );
+
+                    const albums = popularTracks
+                        .map(track => track.album)
+                        .filter((album, index, self) =>
+                            album && index === self.findIndex(a => a.id === album.id)
+                        );
+
+                    // Générer des questions
+                    if (quizType === 'multiple_choice') {
+                        questions = generateMultipleChoiceQuestions(popularTracks, artists, albums, rounds || 10);
+                    } else {
+                        questions = generateFreeTextQuestions(popularTracks, artists, albums, rounds || 10);
+                    }
+
+                    // Ajouter des IDs et numéros de rounds
+                    questions = questions.map((q, index) => ({
+                        ...q,
+                        id: `q-${Date.now()}-${index}`,
+                        round: index + 1
+                    }));
                 }
 
                 // Store game data
@@ -288,12 +360,15 @@ export default async function handler(req, res) {
                     currentRound: 0,
                     totalRounds: rounds || 10,
                     questions: questions,
+                    quizType: quizType || 'multiple_choice',
                     scores: roomData.players.map(player => ({
                         userId: player.userId,
                         user: player.user,
                         score: 0
                     })),
-                    startTime: Date.now()
+                    startTime: Date.now(),
+                    // Initialiser la liste des joueurs ayant répondu
+                    playersAnswered: new Set()
                 };
 
                 activeGames.set(roomCode, gameData);
@@ -304,6 +379,7 @@ export default async function handler(req, res) {
                 // Inform clients that game is starting
                 io.to(roomCode).emit('gameStarted', {
                     rounds: rounds || 10,
+                    quizType: quizType || 'multiple_choice',
                     players: roomData.players.length,
                     timestamp: Date.now()
                 });
@@ -343,6 +419,12 @@ export default async function handler(req, res) {
                     return;
                 }
 
+                // Si le joueur a déjà répondu, ignorer
+                if (gameData.playersAnswered.has(userId)) {
+                    console.log(`Player ${userId} already answered this question`);
+                    return;
+                }
+
                 // Check answer (allow for case and accent insensitivity)
                 const normalizeString = (str) => {
                     return str.toLowerCase()
@@ -355,6 +437,9 @@ export default async function handler(req, res) {
                 const correctAnswer = normalizeString(currentQuestion.answer);
 
                 const isCorrect = userAnswer === correctAnswer;
+
+                // Marquer ce joueur comme ayant répondu
+                gameData.playersAnswered.add(userId);
 
                 // Calculate points (more points for faster answers)
                 let points = 0;
@@ -370,9 +455,6 @@ export default async function handler(req, res) {
                         playerScore.score += points;
                     }
 
-                    // Move to next question
-                    clearTimeout(gameData.questionTimer);
-
                     // Notify player of correct answer
                     socket.emit('answerResult', {
                         correct: true,
@@ -385,18 +467,45 @@ export default async function handler(req, res) {
                         system: true,
                         message: `${gameData.scores.find(s => s.userId === userId)?.user?.pseudo || 'Un joueur'} a trouvé la bonne réponse!`
                     });
-
-                    // Wait a moment before next question
-                    setTimeout(() => {
-                        sendNextQuestion(roomCode, io);
-                    }, 3000);
                 } else {
-                    // Incorrect answer
+                    // Incorrect answer - montrer immédiatement la bonne réponse
                     socket.emit('answerResult', {
                         correct: false,
                         points: 0,
-                        answer: null // Don't reveal correct answer yet
+                        answer: currentQuestion.answer // Envoyer la bonne réponse immédiatement
                     });
+                }
+
+                // Vérifier si tous les joueurs ont répondu
+                const playersInRoom = activeRooms.get(roomCode)?.players || [];
+                const totalPlayers = playersInRoom.length;
+
+                if (gameData.playersAnswered.size >= totalPlayers) {
+                    // Tous les joueurs ont répondu, passer à la question suivante
+                    console.log(`Tous les joueurs ont répondu à la question ${currentQuestion.id}`);
+
+                    // Annuler le timer existant
+                    clearTimeout(gameData.questionTimer);
+
+                    // Passer à la question suivante après un court délai
+                    setTimeout(() => {
+                        // Envoyer les scores actuels
+                        io.to(roomCode).emit('roundEnd', {
+                            round: gameData.currentRound,
+                            nextRound: gameData.currentRound < gameData.totalRounds ? gameData.currentRound + 1 : null,
+                            scores: gameData.scores.sort((a, b) => b.score - a.score),
+                            isLastRound: gameData.currentRound >= gameData.totalRounds
+                        });
+
+                        // Passer à la question suivante si ce n'est pas la dernière
+                        if (gameData.currentRound < gameData.totalRounds) {
+                            setTimeout(() => {
+                                sendNextQuestion(roomCode, io);
+                            }, 3000);
+                        } else {
+                            endGame(roomCode, io);
+                        }
+                    }, 3000);
                 }
             } catch (error) {
                 console.error('Error processing answer:', error);
@@ -513,13 +622,20 @@ export default async function handler(req, res) {
         const currentQuestion = gameData.questions[gameData.currentRound - 1];
         currentQuestion.sentAt = Date.now();
 
+        // Réinitialiser la liste des joueurs ayant répondu
+        gameData.playersAnswered = new Set();
+
         console.log(`Sending question for round ${gameData.currentRound}/${gameData.totalRounds} to room ${roomCode}`);
 
+        // Clone the question and remove the answer
+        const questionForClient = { ...currentQuestion };
+        // Don't delete the answer for free text questions as it's needed for autocomplete
+        if (gameData.quizType === 'multiple_choice') {
+            delete questionForClient.answer; // Don't send the answer to clients in multiple choice mode
+        }
+
         // Send question to all clients
-        io.to(roomCode).emit('newQuestion', {
-            ...currentQuestion,
-            answer: undefined, // Don't send the answer to clients!
-        });
+        io.to(roomCode).emit('newQuestion', questionForClient);
 
         // Set timer for 30 seconds
         gameData.questionTimer = setTimeout(() => {
@@ -594,127 +710,24 @@ export default async function handler(req, res) {
         activeGames.delete(roomCode);
     }
 
-    // Function to get sample questions if Spotify API fails
-    function getSampleQuestions(count) {
-        const questions = [
-            {
-                type: 'artist',
-                previewUrl: 'https://p.scdn.co/mp3-preview/3eb16018c2a700240e9dfb5a3f1834af7c33a128',
-                answer: 'Daft Punk',
-                artistName: 'Daft Punk',
-                albumCover: 'https://i.scdn.co/image/ab67616d0000b273b33d46dfa2635a47eebf63b2'
-            },
-            {
-                type: 'song',
-                previewUrl: 'https://p.scdn.co/mp3-preview/5a12483aa3b51331aba663131dbac8c26a4e9aef',
-                answer: 'Bohemian Rhapsody',
-                artistName: 'Queen',
-                albumCover: 'https://i.scdn.co/image/ab67616d0000b273d254ca498b52d66b80085a1e'
-            },
-            {
-                type: 'album',
-                answer: 'Thriller',
-                artistName: 'Michael Jackson',
-                albumCover: 'https://i.scdn.co/image/ab67616d0000b2734121faee8df82c526cbab2be'
-            },
-            {
-                type: 'artist',
-                previewUrl: 'https://p.scdn.co/mp3-preview/0c068b0d5b1d4afb4ce01c731eddfe271a4ab5bb',
-                answer: 'Billie Eilish',
-                artistName: 'Billie Eilish',
-                albumCover: 'https://i.scdn.co/image/ab67616d0000b2732a038d3bf875d23e4aeaa84e'
-            },
-            {
-                type: 'song',
-                previewUrl: 'https://p.scdn.co/mp3-preview/452de87e6104ded50e674050d56c7269336a3fe9',
-                answer: 'Blinding Lights',
-                artistName: 'The Weeknd',
-                albumCover: 'https://i.scdn.co/image/ab67616d0000b27348a42a53ea8e0d9e98423a6d'
-            },
-            {
-                type: 'album',
-                answer: 'The Dark Side of the Moon',
-                artistName: 'Pink Floyd',
-                albumCover: 'https://i.scdn.co/image/ab67616d0000b273ea7caaff71dea1051d49b2fe'
-            },
-            {
-                type: 'artist',
-                previewUrl: 'https://p.scdn.co/mp3-preview/77a5b67f66c1f18353ea5afc6e8628c145267d4a',
-                answer: 'Kendrick Lamar',
-                artistName: 'Kendrick Lamar',
-                albumCover: 'https://i.scdn.co/image/ab67616d0000b2732e8ed79e177ff6011076f5f0'
-            },
-            {
-                type: 'song',
-                previewUrl: 'https://p.scdn.co/mp3-preview/7df27a9a6ac1d6c8767b61b38dc37ba5cfa3f19c',
-                answer: 'Imagine',
-                artistName: 'John Lennon',
-                albumCover: 'https://i.scdn.co/image/ab67616d0000b2736750daf5f4576e3c25d5c7aa'
-            },
-            {
-                type: 'album',
-                answer: 'Nevermind',
-                artistName: 'Nirvana',
-                albumCover: 'https://i.scdn.co/image/ab67616d0000b27336c5417732e53e23cb219246'
-            },
-            {
-                type: 'artist',
-                previewUrl: 'https://p.scdn.co/mp3-preview/8de4f9d9671c42e7e6f3ecf0edcba3f08d5593f2',
-                answer: 'Taylor Swift',
-                artistName: 'Taylor Swift',
-                albumCover: 'https://i.scdn.co/image/ab67616d0000b273e0b64c8be3c4e804abcb2696'
-            },
-            {
-                type: 'song',
-                previewUrl: 'https://p.scdn.co/mp3-preview/3eb16018c2a700240e9dfb5a3f1834af7c33a128',
-                answer: 'Get Lucky',
-                artistName: 'Daft Punk',
-                albumCover: 'https://i.scdn.co/image/ab67616d0000b273b33d46dfa2635a47eebf63b2'
-            },
-            {
-                type: 'album',
-                answer: 'Abbey Road',
-                artistName: 'The Beatles',
-                albumCover: 'https://i.scdn.co/image/ab67616d0000b273dc30583ba717007b00cceb25'
-            },
-            {
-                type: 'artist',
-                previewUrl: 'https://p.scdn.co/mp3-preview/5a12483aa3b51331aba663131dbac8c26a4e9aef',
-                answer: 'Queen',
-                artistName: 'Queen',
-                albumCover: 'https://i.scdn.co/image/ab67616d0000b273d254ca498b52d66b80085a1e'
-            },
-            {
-                type: 'song',
-                previewUrl: 'https://p.scdn.co/mp3-preview/0c068b0d5b1d4afb4ce01c731eddfe271a4ab5bb',
-                answer: 'Bad Guy',
-                artistName: 'Billie Eilish',
-                albumCover: 'https://i.scdn.co/image/ab67616d0000b2732a038d3bf875d23e4aeaa84e'
+    // Add a periodic cleanup task to remove stale data
+    setInterval(() => {
+        const now = Date.now();
+
+        // Clean up inactive connections (older than 1 hour)
+        for (const [id, connection] of activeConnections.entries()) {
+            if (now - connection.lastActivity > 3600000) {
+                activeConnections.delete(id);
             }
-        ];
+        }
 
-        // Prioritize song questions with preview URLs
-        const songQuestionsWithPreview = questions.filter(q => q.type === 'song' && q.previewUrl);
-        const otherQuestions = questions.filter(q => !(q.type === 'song' && q.previewUrl));
-
-        // Set target counts for each question type
-        const targetSongCount = Math.min(Math.ceil(count * 0.7), songQuestionsWithPreview.length);
-        const targetOtherCount = count - targetSongCount;
-
-        // Select and shuffle the questions
-        const shuffledSongs = shuffleArray(songQuestionsWithPreview).slice(0, targetSongCount);
-        const shuffledOthers = shuffleArray(otherQuestions).slice(0, targetOtherCount);
-
-        // Combine and re-shuffle all questions
-        const selectedQuestions = shuffleArray([...shuffledSongs, ...shuffledOthers]);
-
-        // Add IDs and round numbers
-        return selectedQuestions.map((q, index) => ({
-            ...q,
-            id: `sample-${Date.now()}-${index}`,
-            round: index + 1
-        }));
-    }
+        // Clean up finished games (older than 1 hour)
+        for (const [roomCode, gameData] of activeGames.entries()) {
+            if (gameData.status === 'finished' && now - gameData.startTime > 3600000) {
+                activeGames.delete(roomCode);
+            }
+        }
+    }, 300000); // Run every 5 minutes
 
     // Stocker l'instance io sur l'objet server pour réutilisation
     res.socket.server.io = io;
