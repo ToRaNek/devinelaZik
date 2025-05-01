@@ -22,7 +22,8 @@ export default function PartieComponent({ roomCode }) {
   const [isHost, setIsHost] = useState(false);
 
   // État du jeu
-  const [gameStatus, setGameStatus] = useState('waiting'); // waiting, playing, finished
+  const [gameStatus, setGameStatus] = useState('waiting'); // waiting, loading, playing, finished
+  const [loadingMessage, setLoadingMessage] = useState('Préparation de la partie...');
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [timer, setTimer] = useState(0);
   const [round, setRound] = useState(0);
@@ -206,6 +207,34 @@ export default function PartieComponent({ roomCode }) {
       }
     };
 
+    // New event handlers for game loading states
+    const handleGameStarting = (data) => {
+      console.log('Game preparation started:', data);
+      setGameStatus('loading');
+      setLoadingMessage(data.message || 'Préparation de la partie...');
+
+      // Add system message
+      setMessages(prev => [...prev, {
+        system: true,
+        message: `Préparation de la partie en cours...`,
+        timestamp: data.timestamp
+      }]);
+    };
+
+    const handleGamePreparationUpdate = (data) => {
+      console.log('Game preparation update:', data);
+      setLoadingMessage(data.message || loadingMessage);
+
+      // Add system message for important updates
+      if (data.message) {
+        setMessages(prev => [...prev, {
+          system: true,
+          message: data.message,
+          timestamp: data.timestamp
+        }]);
+      }
+    };
+
     const handleGameStarted = (data) => {
       console.log('Game started:', data);
       setGameStatus('playing');
@@ -325,6 +354,8 @@ export default function PartieComponent({ roomCode }) {
     socket.on('roomData', handleRoomData);
     socket.on('playerJoined', handlePlayerJoined);
     socket.on('playerLeft', handlePlayerLeft);
+    socket.on('gameStarting', handleGameStarting);
+    socket.on('gamePreparationUpdate', handleGamePreparationUpdate);
     socket.on('gameStarted', handleGameStarted);
     socket.on('newQuestion', handleNewQuestion);
     socket.on('questionTimeout', handleQuestionTimeout);
@@ -348,6 +379,8 @@ export default function PartieComponent({ roomCode }) {
       socket.off('roomData', handleRoomData);
       socket.off('playerJoined', handlePlayerJoined);
       socket.off('playerLeft', handlePlayerLeft);
+      socket.off('gameStarting', handleGameStarting);
+      socket.off('gamePreparationUpdate', handleGamePreparationUpdate);
       socket.off('gameStarted', handleGameStarted);
       socket.off('newQuestion', handleNewQuestion);
       socket.off('questionTimeout', handleQuestionTimeout);
@@ -358,7 +391,35 @@ export default function PartieComponent({ roomCode }) {
       socket.off('error', handleError);
       clearInterval(timerInterval);
     };
-  }, [socket, isConnected, roomCode, session, players, room, totalRounds, reconnect, joinedPlayers]);
+  }, [socket, isConnected, roomCode, session, players, room, totalRounds, reconnect, joinedPlayers, loadingMessage]);
+
+  // Loading component to display during game preparation
+  const GameLoadingDisplay = () => (
+      <div className="game-loading-container">
+        <h2>Préparation de la partie</h2>
+
+        <div className="loading-spinner-large"></div>
+
+        <p className="loading-message">
+          {loadingMessage}
+        </p>
+
+        <div className="loading-tips">
+          <h3>Le saviez-vous ?</h3>
+          <p>
+            {[
+              "Devine la Zik utilise l'API Spotify pour accéder à vos musiques préférées.",
+              "Plus vous utilisez Spotify, plus les questions seront pertinentes !",
+              "L'algorithme évite les doublons pour vous proposer des questions variées.",
+              "Les extraits audio durent généralement 30 secondes.",
+              "Répondre rapidement vous rapporte plus de points !",
+              "Les questions sont générées à partir des goûts musicaux de tous les joueurs.",
+              "Si vous ne trouvez pas la réponse, l'album peut parfois vous donner un indice."
+            ][Math.floor(Math.random() * 7)]}
+          </p>
+        </div>
+      </div>
+  );
 
   // Démarrer la partie (hôte uniquement)
   const startGame = (settings) => {
@@ -580,6 +641,10 @@ export default function PartieComponent({ roomCode }) {
           </div>
 
           <div className="game-main">
+            {gameStatus === 'loading' && (
+                <GameLoadingDisplay />
+            )}
+
             {gameStatus === 'playing' && currentQuestion ? (
                 <EnhancedQuestionComponent
                     question={currentQuestion}
@@ -677,6 +742,55 @@ export default function PartieComponent({ roomCode }) {
             </div>
           </div>
         </div>
+
+        <style jsx>{`
+          /* Game Loading Styles */
+          .game-loading-container {
+            background: white;
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+          }
+          
+          .loading-spinner-large {
+            width: 80px;
+            height: 80px;
+            border: 8px solid #f3f3f3;
+            border-top: 8px solid #007bff;
+            border-radius: 50%;
+            margin: 1.5rem auto;
+            animation: spin 1s linear infinite;
+          }
+          
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+          
+          .loading-message {
+            font-size: 1.2rem;
+            margin: 1rem 0;
+          }
+          
+          .loading-tips {
+            margin-top: 2rem;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+          }
+          
+          .loading-tips h3 {
+            font-size: 1rem;
+            color: #007bff;
+            margin-bottom: 0.5rem;
+          }
+          
+          .loading-tips p {
+            font-style: italic;
+            color: #495057;
+          }
+        `}</style>
       </div>
   );
 }

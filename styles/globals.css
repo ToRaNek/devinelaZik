@@ -1518,3 +1518,155 @@ body {
   color: #666;
   margin-top: 5px;
 }
+
+/* Add this to styles/globals.css */
+
+/* Game Loading Styles */
+.game-loading-container {
+  background: white;
+  border-radius: 8px;
+  padding: 2rem;
+  text-align: center;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.loading-spinner-large {
+  width: 80px;
+  height: 80px;
+  border: 8px solid #f3f3f3;
+  border-top: 8px solid #007bff;
+  border-radius: 50%;
+  margin: 1.5rem auto;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-message {
+  font-size: 1.2rem;
+  margin: 1rem 0;
+}
+
+.loading-progress-container {
+  margin: 1.5rem 0;
+}
+
+.loading-progress-bar {
+  height: 10px;
+  background: #e9ecef;
+  border-radius: 5px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+
+.loading-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #007bff, #6a11cb);
+  border-radius: 5px;
+  transition: width 0.3s ease;
+}
+
+.loading-progress-text {
+  font-weight: bold;
+}
+
+.loading-detail {
+  color: #6c757d;
+  font-size: 0.9rem;
+}
+
+/* YouTube Audio Player Improvements */
+.youtube-audio-container {
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+  height: 80px;
+  background: #f8f9fa;
+  border-radius: 10px;
+  margin-bottom: 1rem;
+}
+
+.youtube-audio-iframe {
+  width: 100%;
+  height: 300px;
+  position: absolute;
+  top: -120px;
+  left: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.audio-loading-indicator {
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.1);
+  color: #333;
+  font-size: 0.8rem;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  text-align: center;
+}
+
+.audio-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.audio-progress {
+  height: 6px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 0.25rem;
+}
+
+.audio-progress-bar {
+  height: 100%;
+  background: #007bff;
+  border-radius: 3px;
+  transition: width 1s linear;
+}
+
+.audio-source {
+  font-size: 0.75rem;
+  color: #666;
+  margin: 0;
+  text-align: center;
+}
+
+.audio-unavailable {
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.audio-clue {
+  display: block;
+  font-weight: bold;
+  margin-top: 0.5rem;
+}
+
+.retry-audio-button {
+  margin-top: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.retry-audio-button:hover {
+  background: #0069d9;
+}

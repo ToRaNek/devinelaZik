@@ -14,6 +14,7 @@ const {
   getPlaylistTracks
 } = require('./lib/spotifyPlayDL');
 const { generateMultipleChoiceQuestions, generateFreeTextQuestions } = require('./lib/enhancedSpotifyUtils');
+const { findAudioPreviewUrl } = require('./lib/youtubeUtils');
 
 const prisma = new PrismaClient();
 const dev = process.env.NODE_ENV !== 'production';
@@ -519,6 +520,11 @@ app.prepare().then(() => {
     });
 
     // Démarrer une partie
+    // server.js - Updated startGame logic
+    // Add this to the top of server.js after existing requires
+
+
+// Replace the existing startGame event handler in server.js with this improved version
     socket.on('startGame', async (data) => {
       try {
         console.log(`Démarrage de partie demandé dans la salle ${data.roomCode} par ${socket.userId}`);
@@ -531,20 +537,219 @@ app.prepare().then(() => {
           return;
         }
 
-        // Generate questions using data from Spotify
+        // Notify all clients that game preparation has started
+        io.to(data.roomCode).emit('gameStarting', {
+          message: "Préparation de la partie en cours...",
+          timestamp: Date.now()
+        });
+
+        // Collect music data from all players in the room
+        console.log(`Collecting music data from ${roomData.players.length} players`);
+
+        // Track unique songs to avoid duplicates
+        const uniqueTrackIds = new Set();
+        let allTracks = [];
+        let allArtists = [];
+        let allAlbums = [];
+
+        // Process each player's data
+        for (const player of roomData.players) {
+          try {
+            // Notify about progress
+            io.to(data.roomCode).emit('gamePreparationUpdate', {
+              message: `Chargement des données musicales de ${player.user.pseudo || 'Joueur'}...`,
+              timestamp: Date.now()
+            });
+
+            // Get favorite tracks from this player
+            const playerTracks = await getUserTopTracks(player.userId) || [];
+            const playerSavedTracks = await getUserSavedTracks(player.userId) || [];
+            const playerRecentTracks = await getRecentlyPlayedTracks(player.userId) || [];
+
+            // Get playlists from this player
+            const playlists = await getUserPlaylists(player.userId, 3) || [];
+            const playlistTracks = [];
+
+            // Get tracks from player's playlists (limit to 3 playlists for performance)
+            for (const playlist of playlists.slice(0, 3)) {
+              try {
+                const tracks = await getPlaylistTracks(playlist.id, player.userId);
+                if (tracks && tracks.length > 0) {
+                  playlistTracks.push(...tracks);
+                }
+              } catch (err) {
+                console.error(`Error getting playlist tracks for ${playlist.id}:`, err);
+              }
+            }
+
+            // Combine all track sources and filter out duplicates
+            const playerAllTracks = [...playerTracks, ...playerSavedTracks, ...playerRecentTracks, ...playlistTracks];
+
+            // Add unique tracks to the pool
+            playerAllTracks.forEach(track => {
+              if (track && track.id && !uniqueTrackIds.has(track.id)) {
+                uniqueTrackIds.add(track.id);
+                allTracks.push(track);
+              }
+            });
+
+            // Get artists from this player
+            const playerArtists = await getUserTopArtists(player.userId) || [];
+            allArtists = [...allArtists, ...playerArtists];
+
+            // Extract albums from tracks
+            const trackAlbums = playerAllTracks
+                .map(track => track.album)
+                .filter((album, index, self) =>
+                    album && index === self.findIndex(a => a.id === album.id)
+                );
+
+            allAlbums = [...allAlbums, ...trackAlbums];
+
+          } catch (error) {
+            console.error(`Error getting data for player ${player.userId}:`, error);
+            // Continue with other players if one fails
+          }
+        }
+
+        // If we still don't have enough tracks, use the host's data
+        if (allTracks.length < 10) {
+          console.log(`Not enough tracks collected, falling back to host data`);
+          io.to(data.roomCode).emit('gamePreparationUpdate', {
+            message: `Utilisation des données de l'hôte comme source principale...`,
+            timestamp: Date.now()
+          });
+
+          try {
+            // Use existing function to get questions from host's Spotify
+            const hostQuestions = await generateQuestionsFromSpotify(socket.userId, data.rounds || 10);
+
+            // If succeeded, we'll use these questions directly
+            if (hostQuestions && hostQuestions.length > 0) {
+              console.log(`Using ${hostQuestions.length} questions from host's Spotify data`);
+
+              // Add YouTube fallback for questions without preview URLs
+              io.to(data.roomCode).emit('gamePreparationUpdate', {
+                message: "Amélioration des extraits audio...",
+                timestamp: Date.now()
+              });
+
+              // Enhance questions with YouTube previews if needed
+              for (const question of hostQuestions) {
+                if (!question.previewUrl && question.type === 'song') {
+                  try {
+                    // Try to find YouTube preview
+                    question.previewUrl = await findAudioPreviewUrl({
+                      name: question.answer,
+                      artists: [{ name: question.artistName }]
+                    });
+
+                    if (question.previewUrl && question.previewUrl.includes('youtube')) {
+                      question.previewSource = 'youtube';
+                    }
+                  } catch (err) {
+                    console.error(`Error enhancing question with YouTube:`, err);
+                  }
+                }
+              }
+
+              // Store game data
+              const gameData = {
+                roomCode: data.roomCode,
+                status: 'playing',
+                hostId: socket.userId,
+                currentRound: 0,
+                totalRounds: hostQuestions.length,
+                questions: hostQuestions,
+                quizType: data.quizType || 'multiple_choice',
+                scores: roomData.players.map(player => ({
+                  userId: player.userId,
+                  user: player.user,
+                  score: 0
+                })),
+                startTime: Date.now(),
+                playersAnswered: new Set()
+              };
+
+              activeGames.set(data.roomCode, gameData);
+              roomData.status = 'playing';
+
+              // Inform clients that game is starting
+              io.to(data.roomCode).emit('gameStarted', {
+                rounds: hostQuestions.length,
+                quizType: data.quizType || 'multiple_choice',
+                players: roomData.players.length,
+                timestamp: Date.now()
+              });
+
+              // Send first question after a short delay
+              setTimeout(() => {
+                sendNextQuestion(data.roomCode, io);
+              }, 2000);
+
+              return;
+            }
+          } catch (error) {
+            console.error('Host Spotify data fetch failed:', error);
+          }
+        }
+
+        console.log(`Collected ${allTracks.length} tracks, ${allArtists.length} artists, ${allAlbums.length} albums`);
+
+        // Generate questions from collected data
+        io.to(data.roomCode).emit('gamePreparationUpdate', {
+          message: "Génération des questions...",
+          timestamp: Date.now()
+        });
+
         let questions = [];
-        try {
-          console.log(`Generating questions for user ${socket.userId}`);
 
-          // Générer des questions à partir des données Spotify
-          questions = await generateQuestionsFromAllSources(socket.userId, data.rounds || 10, data.quizType || 'multiple_choice');
+        // Generate questions using the appropriate function based on quiz type
+        if (data.quizType === 'multiple_choice') {
+          questions = generateMultipleChoiceQuestions(allTracks, allArtists, allAlbums, data.rounds || 10);
+        } else {
+          questions = generateFreeTextQuestions(allTracks, allArtists, allAlbums, data.rounds || 10);
+        }
 
-          console.log(`Generated ${questions.length} questions`);
-        } catch (error) {
-          console.error('Error generating questions:', error);
-          socket.emit('error', { message: `Failed to generate questions: ${error.message}` });
+        // Ensure we have at least some questions
+        if (!questions || questions.length === 0) {
+          socket.emit('error', { message: 'Impossible de générer des questions. Veuillez réessayer.' });
           return;
         }
+
+        console.log(`Generated ${questions.length} questions, now enhancing with audio...`);
+
+        // Enhance questions with YouTube previews if needed
+        io.to(data.roomCode).emit('gamePreparationUpdate', {
+          message: "Amélioration des extraits audio...",
+          timestamp: Date.now()
+        });
+
+        // Count previews before enhancement
+        const previewsBefore = questions.filter(q => q.previewUrl).length;
+
+        // Add YouTube fallback for questions without preview URLs
+        for (const question of questions) {
+          if (!question.previewUrl && question.type === 'song') {
+            try {
+              // Try to find YouTube preview
+              question.previewUrl = await findAudioPreviewUrl({
+                name: question.answer,
+                artists: [{ name: question.artistName }]
+              });
+
+              if (question.previewUrl && question.previewUrl.includes('youtube')) {
+                question.previewSource = 'youtube';
+              }
+            } catch (err) {
+              console.error(`Error enhancing question with YouTube:`, err);
+            }
+          }
+        }
+
+        // Count previews after enhancement
+        const previewsAfter = questions.filter(q => q.previewUrl).length;
+        console.log(`Enhanced audio: ${previewsBefore} => ${previewsAfter} questions with preview`);
 
         // Store game data
         const gameData = {
@@ -561,13 +766,10 @@ app.prepare().then(() => {
             score: 0
           })),
           startTime: Date.now(),
-          // Initialiser la liste des joueurs ayant répondu
           playersAnswered: new Set()
         };
 
         activeGames.set(data.roomCode, gameData);
-
-        // Update room status
         roomData.status = 'playing';
 
         // Inform clients that game is starting
@@ -587,6 +789,70 @@ app.prepare().then(() => {
         socket.emit('error', { message: `Failed to start game: ${error.message}` });
       }
     });
+
+// Helper function to collect music data from a single player
+    async function collectPlayerMusicData(userId) {
+      try {
+        // Use existing functions to get Spotify data
+        const tracks = [];
+        const artists = [];
+        const albums = [];
+
+        // Get tracks from various sources
+        try {
+          // Top tracks - short term
+          const topTracks = await getUserTopTracks(userId, 'short_term', 30);
+          if (topTracks && topTracks.length > 0) {
+            tracks.push(...topTracks);
+          }
+
+          // Saved tracks
+          const savedTracks = await getUserSavedTracks(userId, 30);
+          if (savedTracks && savedTracks.length > 0) {
+            // Filter out duplicates
+            const uniqueTracks = savedTracks.filter(
+                track => !tracks.some(t => t.id === track.id)
+            );
+            tracks.push(...uniqueTracks);
+          }
+
+          // Recently played
+          const recentTracks = await getRecentlyPlayedTracks(userId, 20);
+          if (recentTracks && recentTracks.length > 0) {
+            // Filter out duplicates
+            const uniqueTracks = recentTracks.filter(
+                track => !tracks.some(t => t.id === track.id)
+            );
+            tracks.push(...uniqueTracks);
+          }
+
+          // Top artists
+          const topArtists = await getUserTopArtists(userId, 'medium_term', 20);
+          if (topArtists && topArtists.length > 0) {
+            artists.push(...topArtists);
+          }
+
+          // Extract albums from tracks
+          const trackAlbums = tracks
+              .map(track => track.album)
+              .filter((album, index, self) =>
+                  album && index === self.findIndex(a => a.id === album.id)
+              );
+
+          if (trackAlbums.length > 0) {
+            albums.push(...trackAlbums);
+          }
+
+        } catch (error) {
+          console.error(`Error collecting music data for user ${userId}:`, error);
+        }
+
+        return { tracks, artists, albums };
+      } catch (error) {
+        console.error(`Failed to collect music data for user ${userId}:`, error);
+        return { tracks: [], artists: [], albums: [] };
+      }
+    }
 
     // Handle answer submission
     socket.on('submitAnswer', (data) => {
