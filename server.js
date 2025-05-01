@@ -525,6 +525,8 @@ app.prepare().then(() => {
 
 
 // Replace the existing startGame event handler in server.js with this improved version
+    // Modification pour server.js - Remplacer la section de startGame qui gère la collecte des données
+
     socket.on('startGame', async (data) => {
       try {
         console.log(`Démarrage de partie demandé dans la salle ${data.roomCode} par ${socket.userId}`);
@@ -543,7 +545,7 @@ app.prepare().then(() => {
           timestamp: Date.now()
         });
 
-        // Collect music data from all players in the room
+        // Collect music data from ALL players in the room
         console.log(`Collecting music data from ${roomData.players.length} players`);
 
         // Track unique songs to avoid duplicates
@@ -552,149 +554,201 @@ app.prepare().then(() => {
         let allArtists = [];
         let allAlbums = [];
 
-        // Process each player's data
-        for (const player of roomData.players) {
+        // Amélioration: Traquer les statistiques de contribution pour le logging
+        const playerContributions = {};
+
+        // Process each player's data - Using Promise.all for parallel processing
+        const playerPromises = roomData.players.map(async (player) => {
           try {
+            // Initialize contribution counter
+            playerContributions[player.userId] = {
+              tracks: 0,
+              artists: 0,
+              albums: 0,
+              name: player.user.pseudo || 'Joueur'
+            };
+
             // Notify about progress
             io.to(data.roomCode).emit('gamePreparationUpdate', {
               message: `Chargement des données musicales de ${player.user.pseudo || 'Joueur'}...`,
               timestamp: Date.now()
             });
 
-            // Get favorite tracks from this player
-            const playerTracks = await getUserTopTracks(player.userId) || [];
-            const playerSavedTracks = await getUserSavedTracks(player.userId) || [];
-            const playerRecentTracks = await getRecentlyPlayedTracks(player.userId) || [];
-
-            // Get playlists from this player
-            const playlists = await getUserPlaylists(player.userId, 3) || [];
-            const playlistTracks = [];
-
-            // Get tracks from player's playlists (limit to 3 playlists for performance)
-            for (const playlist of playlists.slice(0, 3)) {
+            // Get favorite tracks from this player - with better error handling
+            let playerData = { tracks: [], artists: [], albums: [] };
+            try {
+              // Wrap each API call in try/catch to prevent one failure from blocking everything
               try {
-                const tracks = await getPlaylistTracks(playlist.id, player.userId);
-                if (tracks && tracks.length > 0) {
-                  playlistTracks.push(...tracks);
-                }
-              } catch (err) {
-                console.error(`Error getting playlist tracks for ${playlist.id}:`, err);
+                const tracks = await getUserTopTracks(player.userId) || [];
+                playerData.tracks.push(...tracks);
+                console.log(`Got ${tracks.length} top tracks from ${player.user.pseudo}`);
+              } catch (e) {
+                console.error(`Failed to get top tracks for ${player.user.pseudo}:`, e.message);
               }
+
+              try {
+                const savedTracks = await getUserSavedTracks(player.userId) || [];
+                playerData.tracks.push(...savedTracks);
+                console.log(`Got ${savedTracks.length} saved tracks from ${player.user.pseudo}`);
+              } catch (e) {
+                console.error(`Failed to get saved tracks for ${player.user.pseudo}:`, e.message);
+              }
+
+              try {
+                const recentTracks = await getRecentlyPlayedTracks(player.userId) || [];
+                playerData.tracks.push(...recentTracks);
+                console.log(`Got ${recentTracks.length} recent tracks from ${player.user.pseudo}`);
+              } catch (e) {
+                console.error(`Failed to get recent tracks for ${player.user.pseudo}:`, e.message);
+              }
+
+              // Get playlists from this player
+              try {
+                const playlists = await getUserPlaylists(player.userId, 3) || [];
+                console.log(`Got ${playlists.length} playlists from ${player.user.pseudo}`);
+
+                // Get tracks from player's playlists (limit to 3 playlists for performance)
+                for (const playlist of playlists.slice(0, 3)) {
+                  try {
+                    const tracks = await getPlaylistTracks(playlist.id, player.userId);
+                    if (tracks && tracks.length > 0) {
+                      playerData.tracks.push(...tracks);
+                      console.log(`Got ${tracks.length} tracks from playlist "${playlist.name}"`);
+                    }
+                  } catch (err) {
+                    console.error(`Error getting playlist tracks for ${playlist.id}:`, err.message);
+                  }
+                }
+              } catch (e) {
+                console.error(`Failed to get playlists for ${player.user.pseudo}:`, e.message);
+              }
+
+              // Get artists from this player
+              try {
+                const artists = await getUserTopArtists(player.userId) || [];
+                playerData.artists.push(...artists);
+                console.log(`Got ${artists.length} artists from ${player.user.pseudo}`);
+              } catch (e) {
+                console.error(`Failed to get top artists for ${player.user.pseudo}:`, e.message);
+              }
+
+              // Extract unique albums from tracks
+              const trackAlbums = playerData.tracks
+                  .map(track => track.album)
+                  .filter((album, index, self) =>
+                      album && index === self.findIndex(a => a && a.id === album.id)
+                  );
+
+              playerData.albums.push(...trackAlbums);
+              console.log(`Extracted ${trackAlbums.length} albums from ${player.user.pseudo}'s tracks`);
+
+              // Return processed unique data
+              return {
+                userId: player.userId,
+                name: player.user.pseudo || 'Joueur',
+                tracks: playerData.tracks.filter(track => track && track.id),
+                artists: playerData.artists.filter(artist => artist && artist.id),
+                albums: playerData.albums.filter(album => album && album.id)
+              };
+            } catch (error) {
+              console.error(`Error processing data for ${player.user.pseudo}:`, error);
+              // Return empty data on error to prevent blocking other players
+              return {
+                userId: player.userId,
+                name: player.user.pseudo || 'Joueur',
+                tracks: [],
+                artists: [],
+                albums: []
+              };
             }
+          } catch (error) {
+            console.error(`Fatal error getting data for player ${player.userId}:`, error);
+            // Return empty data on error
+            return {
+              userId: player.userId,
+              name: player.user.pseudo || 'Joueur',
+              tracks: [],
+              artists: [],
+              albums: []
+            };
+          }
+        });
 
-            // Combine all track sources and filter out duplicates
-            const playerAllTracks = [...playerTracks, ...playerSavedTracks, ...playerRecentTracks, ...playlistTracks];
+        // Wait for all player data to be collected in parallel
+        const allPlayersData = await Promise.all(playerPromises);
 
-            // Add unique tracks to the pool
-            playerAllTracks.forEach(track => {
+        // Combine all player data and track contribution stats
+        allPlayersData.forEach(playerData => {
+          // Add unique tracks to the pool
+          playerData.tracks.forEach(track => {
+            if (track && track.id && !uniqueTrackIds.has(track.id)) {
+              uniqueTrackIds.add(track.id);
+              allTracks.push(track);
+              playerContributions[playerData.userId].tracks++;
+            }
+          });
+
+          // Add artists (avoiding duplicates)
+          const uniqueArtistIds = new Set();
+          playerData.artists.forEach(artist => {
+            if (artist && artist.id && !uniqueArtistIds.has(artist.id)) {
+              uniqueArtistIds.add(artist.id);
+              allArtists.push(artist);
+              playerContributions[playerData.userId].artists++;
+            }
+          });
+
+          // Add albums (avoiding duplicates)
+          const uniqueAlbumIds = new Set();
+          playerData.albums.forEach(album => {
+            if (album && album.id && !uniqueAlbumIds.has(album.id)) {
+              uniqueAlbumIds.add(album.id);
+              allAlbums.push(album);
+              playerContributions[playerData.userId].albums++;
+            }
+          });
+        });
+
+        // Log contribution stats
+        console.log("Player music contributions:");
+        Object.entries(playerContributions).forEach(([userId, stats]) => {
+          console.log(`${stats.name}: ${stats.tracks} tracks, ${stats.artists} artists, ${stats.albums} albums`);
+
+          // Notify players about their contributions
+          io.to(data.roomCode).emit('gamePreparationUpdate', {
+            message: `${stats.name} a contribué avec ${stats.tracks} morceaux`,
+            timestamp: Date.now()
+          });
+        });
+
+        console.log(`Combined pool: ${allTracks.length} tracks, ${allArtists.length} artists, ${allAlbums.length} albums`);
+
+        // If we still don't have enough tracks, use fallback data
+        const MIN_REQUIRED_TRACKS = 10;
+        if (allTracks.length < MIN_REQUIRED_TRACKS) {
+          console.log(`Not enough tracks collected (${allTracks.length}/${MIN_REQUIRED_TRACKS}), using fallback data`);
+          io.to(data.roomCode).emit('gamePreparationUpdate', {
+            message: "Pas assez de données musicales, utilisation des morceaux populaires...",
+            timestamp: Date.now()
+          });
+
+          // Au lieu d'utiliser seulement les données de l'hôte, utiliser une liste de morceaux populaires
+          try {
+            const popularTracks = await getPopularTracks(data.rounds || 10);
+
+            // Ajouter ces morceaux au pool existant (s'il y en a)
+            popularTracks.forEach(track => {
               if (track && track.id && !uniqueTrackIds.has(track.id)) {
                 uniqueTrackIds.add(track.id);
                 allTracks.push(track);
               }
             });
 
-            // Get artists from this player
-            const playerArtists = await getUserTopArtists(player.userId) || [];
-            allArtists = [...allArtists, ...playerArtists];
-
-            // Extract albums from tracks
-            const trackAlbums = playerAllTracks
-                .map(track => track.album)
-                .filter((album, index, self) =>
-                    album && index === self.findIndex(a => a.id === album.id)
-                );
-
-            allAlbums = [...allAlbums, ...trackAlbums];
-
+            console.log(`Added ${popularTracks.length} popular tracks to supplement`);
           } catch (error) {
-            console.error(`Error getting data for player ${player.userId}:`, error);
-            // Continue with other players if one fails
+            console.error('Error getting popular tracks:', error);
           }
         }
-
-        // If we still don't have enough tracks, use the host's data
-        if (allTracks.length < 10) {
-          console.log(`Not enough tracks collected, falling back to host data`);
-          io.to(data.roomCode).emit('gamePreparationUpdate', {
-            message: `Utilisation des données de l'hôte comme source principale...`,
-            timestamp: Date.now()
-          });
-
-          try {
-            // Use existing function to get questions from host's Spotify
-            const hostQuestions = await generateQuestionsFromSpotify(socket.userId, data.rounds || 10);
-
-            // If succeeded, we'll use these questions directly
-            if (hostQuestions && hostQuestions.length > 0) {
-              console.log(`Using ${hostQuestions.length} questions from host's Spotify data`);
-
-              // Add YouTube fallback for questions without preview URLs
-              io.to(data.roomCode).emit('gamePreparationUpdate', {
-                message: "Amélioration des extraits audio...",
-                timestamp: Date.now()
-              });
-
-              // Enhance questions with YouTube previews if needed
-              for (const question of hostQuestions) {
-                if (!question.previewUrl && question.type === 'song') {
-                  try {
-                    // Try to find YouTube preview
-                    question.previewUrl = await findAudioPreviewUrl({
-                      name: question.answer,
-                      artists: [{ name: question.artistName }]
-                    });
-
-                    if (question.previewUrl && question.previewUrl.includes('youtube')) {
-                      question.previewSource = 'youtube';
-                    }
-                  } catch (err) {
-                    console.error(`Error enhancing question with YouTube:`, err);
-                  }
-                }
-              }
-
-              // Store game data
-              const gameData = {
-                roomCode: data.roomCode,
-                status: 'playing',
-                hostId: socket.userId,
-                currentRound: 0,
-                totalRounds: hostQuestions.length,
-                questions: hostQuestions,
-                quizType: data.quizType || 'multiple_choice',
-                scores: roomData.players.map(player => ({
-                  userId: player.userId,
-                  user: player.user,
-                  score: 0
-                })),
-                startTime: Date.now(),
-                playersAnswered: new Set()
-              };
-
-              activeGames.set(data.roomCode, gameData);
-              roomData.status = 'playing';
-
-              // Inform clients that game is starting
-              io.to(data.roomCode).emit('gameStarted', {
-                rounds: hostQuestions.length,
-                quizType: data.quizType || 'multiple_choice',
-                players: roomData.players.length,
-                timestamp: Date.now()
-              });
-
-              // Send first question after a short delay
-              setTimeout(() => {
-                sendNextQuestion(data.roomCode, io);
-              }, 2000);
-
-              return;
-            }
-          } catch (error) {
-            console.error('Host Spotify data fetch failed:', error);
-          }
-        }
-
-        console.log(`Collected ${allTracks.length} tracks, ${allArtists.length} artists, ${allAlbums.length} albums`);
 
         // Generate questions from collected data
         io.to(data.roomCode).emit('gamePreparationUpdate', {
@@ -704,11 +758,41 @@ app.prepare().then(() => {
 
         let questions = [];
 
+        // Amélioration: Utiliser une nouvelle fonction de shuffle améliorée
+        function enhancedShuffleArray(array) {
+          // Clone the array to avoid modifying the original
+          const shuffled = [...array];
+
+          // Add some entropy with current timestamp
+          const seed = Date.now();
+
+          // Fisher-Yates shuffle with seeded randomness
+          for (let i = shuffled.length - 1; i > 0; i--) {
+            // Use a combination of Math.random() and our seed for better randomness
+            const randomFactor = Math.sin(seed + i) * 10000;
+            const j = Math.floor(Math.abs(randomFactor) % (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+          }
+
+          return shuffled;
+        }
+
         // Generate questions using the appropriate function based on quiz type
         if (data.quizType === 'multiple_choice') {
-          questions = generateMultipleChoiceQuestions(allTracks, allArtists, allAlbums, data.rounds || 10);
+          // Modification de la fonction pour assurer que tous les joueurs contribuent également
+          questions = generateMultipleChoiceQuestions(
+              enhancedShuffleArray(allTracks), // Shuffle tracks for better distribution
+              enhancedShuffleArray(allArtists), // Shuffle artists
+              enhancedShuffleArray(allAlbums), // Shuffle albums
+              data.rounds || 10
+          );
         } else {
-          questions = generateFreeTextQuestions(allTracks, allArtists, allAlbums, data.rounds || 10);
+          questions = generateFreeTextQuestions(
+              enhancedShuffleArray(allTracks),
+              enhancedShuffleArray(allArtists),
+              enhancedShuffleArray(allAlbums),
+              data.rounds || 10
+          );
         }
 
         // Ensure we have at least some questions
@@ -751,6 +835,13 @@ app.prepare().then(() => {
         const previewsAfter = questions.filter(q => q.previewUrl).length;
         console.log(`Enhanced audio: ${previewsBefore} => ${previewsAfter} questions with preview`);
 
+        // Final shuffle of questions to ensure randomness
+        questions = enhancedShuffleArray(questions).map((q, index) => ({
+          ...q,
+          id: `q-${Date.now()}-${index}`,
+          round: index + 1
+        }));
+
         // Store game data
         const gameData = {
           roomCode: data.roomCode,
@@ -789,6 +880,281 @@ app.prepare().then(() => {
         socket.emit('error', { message: `Failed to start game: ${error.message}` });
       }
     });
+
+// Modification de la fonction generateMultipleChoiceQuestions dans lib/enhancedSpotifyUtils.js
+// Cette partie devrait être remplacée dans le fichier lib/enhancedSpotifyUtils.js
+
+    function generateMultipleChoiceQuestions(tracks, artists, albums, count) {
+      const questions = [];
+
+      // Fonction utilitaire pour mélanger un tableau avec plus d'entropie
+      const shuffleArray = (array) => {
+        const shuffled = [...array];
+        const seed = Date.now();
+
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          // Utiliser une combinaison de Math.random() et du timestamp pour plus d'aléatoire
+          const randomFactor = Math.sin(seed + i) * 10000;
+          const j = Math.floor(Math.abs(randomFactor) % (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        return shuffled;
+      };
+
+      // Fonction pour générer des options incorrectes uniques
+      const generateWrongOptions = (correctOption, allOptions, currentQuestion, count = 3) => {
+        // Check if we're working with track objects or just strings
+        const isOptionsStrings = typeof allOptions[0] === 'string';
+
+        // Filtrer pour éviter les doublons et assurer au moins count+1 options
+        let artistFilter;
+
+        if (currentQuestion.type === 'song' && currentQuestion.artistName && !isOptionsStrings) {
+          // For song questions with track objects, filter options by same artist
+          artistFilter = allOptions.filter(opt =>
+              opt && opt.artists && Array.isArray(opt.artists) &&
+              opt.artists.some(a => a && a.name && a.name.toLowerCase() === currentQuestion.artistName.toLowerCase())
+          );
+        } else {
+          // For other question types or when options are strings, use normal filtering
+          artistFilter = allOptions;
+        }
+
+        // Then filter out the correct answer
+        const filteredOptions = artistFilter.filter(opt => {
+          if (isOptionsStrings) {
+            return opt && opt.toLowerCase() !== correctOption.toLowerCase();
+          } else {
+            return opt && typeof opt === 'object' && opt.name &&
+                opt.name.toLowerCase() !== correctOption.toLowerCase();
+          }
+        });
+
+        // Add debugging logs
+        console.log(`Generating options for: ${correctOption}`);
+        console.log(`Found ${filteredOptions.length} filtered options from ${allOptions.length} total options`);
+        if (filteredOptions.length === 0) {
+          console.log('Warning: No options found, using dummy options');
+          // If no options found, generate some dummy options
+          return ['Option A', 'Option B', 'Option C'].filter(o =>
+              o.toLowerCase() !== correctOption.toLowerCase()
+          ).slice(0, count);
+        }
+
+        // Mélanger et prendre les count premiers éléments
+        return shuffleArray(filteredOptions).slice(0, count);
+      };
+
+      // Séparer les pistes avec et sans prévisualisation
+      const tracksWithPreview = tracks.filter(track => track.preview_url);
+      const tracksWithoutPreview = tracks.filter(track => !track.preview_url);
+
+      console.log(`Pistes avec prévisualisation: ${tracksWithPreview.length}`);
+      console.log(`Pistes sans prévisualisation: ${tracksWithoutPreview.length}`);
+
+      // Allouer 70% des questions aux chansons si possible
+      const songPercentage = 0.7; // 70% des questions seront des chansons
+      let songCount = Math.floor(count * songPercentage);
+      const maxSongsAvailable = Math.min(songCount, tracks.length);
+
+      // Calculer combien de questions d'artistes et d'albums nous pouvons avoir
+      const remainingCount = count - maxSongsAvailable;
+      const artistCount = Math.ceil(remainingCount / 2);
+      const albumCount = remainingCount - artistCount;
+
+      // Réajuster si pas assez de ressources disponibles
+      const finalSongCount = Math.min(maxSongsAvailable, tracksWithPreview.length);
+      const finalArtistCount = Math.min(artistCount, artists.length);
+      const finalAlbumCount = Math.min(albumCount, albums.length);
+
+      console.log(`Distribution des questions: ${finalSongCount} chansons, ${finalArtistCount} artistes, ${finalAlbumCount} albums`);
+
+      // Assurer une meilleure distribution des artistes
+      // Créer des ensembles pour suivre les artistes/albums déjà utilisés
+      const usedArtistIds = new Set();
+      const usedAlbumIds = new Set();
+      const usedTrackIds = new Set();
+
+      // 1. Questions sur les chansons (priorité)
+      // Shuffle les pistes pour éviter de toujours prendre les mêmes
+      const shuffledTracks = shuffleArray(tracks);
+      let selectedSongTracks = [];
+
+      // Sélectionner des pistes en évitant de trop répéter les mêmes artistes
+      for (const track of shuffledTracks) {
+        // Si on a assez de pistes, arrêter
+        if (selectedSongTracks.length >= finalSongCount) break;
+
+        const artistId = track.artists && track.artists[0] ? track.artists[0].id : null;
+
+        // Éviter de trop privilégier un artiste (max 2 chansons par artiste)
+        if (artistId && usedArtistIds.has(artistId)) {
+          // Compter combien de chansons on a déjà de cet artiste
+          const artistTrackCount = selectedSongTracks.filter(t =>
+              t.artists && t.artists[0] && t.artists[0].id === artistId
+          ).length;
+
+          // Si on a déjà 2 chansons de cet artiste, passer à la suivante
+          if (artistTrackCount >= 2) continue;
+        }
+
+        // Ajouter cette piste et marquer l'artiste comme utilisé
+        if (artistId) usedArtistIds.add(artistId);
+        if (track.id) usedTrackIds.add(track.id);
+        selectedSongTracks.push(track);
+      }
+
+      for (let i = 0; i < selectedSongTracks.length; i++) {
+        const track = selectedSongTracks[i];
+        const trackNames = tracks.map(t => t.name);
+
+        const question = {
+          type: 'song',
+          quizType: 'multiple_choice',
+          question: `Quel est ce titre de ${track.artists[0].name} ?`,
+          previewUrl: track.preview_url,
+          answer: track.name,
+          artistName: track.artists[0].name,
+          albumCover: track.album.images[0]?.url
+        };
+
+        // Logs for debugging
+        console.log(`Creating song question for ${track.name} by ${track.artists[0].name}`);
+        console.log(`Track names sample: ${trackNames.slice(0, 3).join(', ')}... (${trackNames.length} total)`);
+
+        const wrongOptions = generateWrongOptions(track.name, trackNames, question);
+
+        question.options = shuffleArray([track.name, ...wrongOptions]);
+        questions.push(question);
+      }
+
+      // 2. Questions de type "artiste"
+      // Shuffle les artistes pour éviter de toujours prendre les mêmes
+      const shuffledArtists = shuffleArray(artists);
+
+      let artistQuestionCount = 0;
+      for (const artist of shuffledArtists) {
+        if (artistQuestionCount >= finalArtistCount) break;
+
+        // Éviter les doublons
+        if (usedArtistIds.has(artist.id)) continue;
+
+        // Chercher une piste avec preview pour cet artiste
+        const artistTracksWithPreview = tracks.filter(track =>
+            track.artists.some(a => a.id === artist.id) && track.preview_url
+        );
+
+        if (artistTracksWithPreview.length > 0) {
+          const track = artistTracksWithPreview[Math.floor(Math.random() * artistTracksWithPreview.length)];
+          const artistNames = artists.map(artist => artist.name);
+
+          // Éviter d'utiliser des pistes déjà utilisées pour des questions de chansons
+          if (usedTrackIds.has(track.id)) continue;
+
+          usedTrackIds.add(track.id);
+          usedArtistIds.add(artist.id);
+
+          const question = {
+            type: 'artist',
+            quizType: 'multiple_choice',
+            question: "Qui est l'artiste de ce morceau ?",
+            previewUrl: track.preview_url,
+            answer: artist.name,
+            artistName: artist.name,
+            albumCover: track.album.images[0]?.url
+          };
+
+          const wrongOptions = generateWrongOptions(artist.name, artistNames, question);
+
+          question.options = shuffleArray([artist.name, ...wrongOptions]);
+          questions.push(question);
+          artistQuestionCount++;
+        }
+      }
+
+      // 3. Questions sur les albums
+      // Shuffle les albums pour éviter de toujours prendre les mêmes
+      const shuffledAlbums = shuffleArray(albums);
+
+      let albumQuestionCount = 0;
+      for (const album of shuffledAlbums) {
+        if (albumQuestionCount >= finalAlbumCount) break;
+
+        // Éviter les doublons
+        if (usedAlbumIds.has(album.id)) continue;
+
+        // Éviter de trop privilégier un artiste (max 2 albums par artiste)
+        const artistId = album.artists && album.artists[0] ? album.artists[0].id : null;
+        if (artistId && usedArtistIds.has(artistId)) {
+          // Compter combien d'albums on a déjà de cet artiste
+          const artistAlbumCount = questions.filter(q =>
+              q.type === 'album' && q.artistName === album.artists[0].name
+          ).length;
+
+          // Si on a déjà 2 albums de cet artiste, passer au suivant
+          if (artistAlbumCount >= 2) continue;
+        }
+
+        usedAlbumIds.add(album.id);
+        if (artistId) usedArtistIds.add(artistId);
+
+        const albumNames = albums.map(album => album.name);
+
+        // Trouver l'artiste de l'album
+        const artistName = album.artists[0]?.name || "Artiste inconnu";
+
+        const question = {
+          type: 'album',
+          quizType: 'multiple_choice',
+          question: `Quel est cet album de ${artistName} ?`,
+          answer: album.name,
+          artistName: artistName,
+          albumCover: album.images[0]?.url
+        };
+
+        const wrongOptions = generateWrongOptions(album.name, albumNames, question);
+
+        question.options = shuffleArray([album.name, ...wrongOptions]);
+        questions.push(question);
+        albumQuestionCount++;
+      }
+
+      // Si on n'a pas assez de questions, compléter avec des questions supplémentaires
+      if (questions.length < count) {
+        const remainingNeeded = count - questions.length;
+
+        // Utiliser les pistes sans preview si nécessaire
+        const availableTracks = [...tracksWithoutPreview, ...tracksWithPreview].filter(
+            track => !usedTrackIds.has(track.id)
+        );
+
+        // Shuffle à nouveau pour plus de randomisation
+        const shuffledAvailableTracks = shuffleArray(availableTracks);
+
+        for (let i = 0; i < remainingNeeded && i < shuffledAvailableTracks.length; i++) {
+          const track = shuffledAvailableTracks[i];
+          const trackNames = tracks.map(t => t.name);
+
+          const question = {
+            type: 'song',
+            quizType: 'multiple_choice',
+            question: `Quel est ce titre de ${track.artists[0].name} ?`,
+            previewUrl: track.preview_url, // peut être null
+            answer: track.name,
+            artistName: track.artists[0].name,
+            albumCover: track.album.images[0]?.url
+          };
+
+          const wrongOptions = generateWrongOptions(track.name, trackNames, question);
+
+          question.options = shuffleArray([track.name, ...wrongOptions]);
+          questions.push(question);
+        }
+      }
+
+      // Faire un shuffle final des questions
+      return shuffleArray(questions);
+    }
 
 // Helper function to collect music data from a single player
     async function collectPlayerMusicData(userId) {
