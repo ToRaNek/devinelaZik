@@ -149,7 +149,7 @@ async function generateQuestionsFromAllSources(userId, count = 10, quizType = 'm
     }
 
     // Collecter les données de Spotify
-    let allTracks = [];
+    let tracks = [];
     let allArtists = [];
     let allAlbums = [];
 
@@ -158,7 +158,7 @@ async function generateQuestionsFromAllSources(userId, count = 10, quizType = 'm
       // Court terme (4 semaines)
       const shortTermTracks = await getUserTopTracks(userId, 'short_term', 50);
       if (shortTermTracks && shortTermTracks.length > 0) {
-        allTracks = [...allTracks, ...shortTermTracks];
+        tracks = [...tracks, ...shortTermTracks];
         console.log(`Ajout de ${shortTermTracks.length} titres préférés (court terme)`);
       }
 
@@ -167,9 +167,9 @@ async function generateQuestionsFromAllSources(userId, count = 10, quizType = 'm
       if (mediumTermTracks && mediumTermTracks.length > 0) {
         // Éviter les doublons en vérifiant les IDs
         const newTracks = mediumTermTracks.filter(track =>
-            !allTracks.some(t => t.id === track.id)
+            !tracks.some(t => t.id === track.id)
         );
-        allTracks = [...allTracks, ...newTracks];
+        tracks = [...tracks, ...newTracks];
         console.log(`Ajout de ${newTracks.length} titres préférés (moyen terme)`);
       }
 
@@ -178,9 +178,9 @@ async function generateQuestionsFromAllSources(userId, count = 10, quizType = 'm
       if (longTermTracks && longTermTracks.length > 0) {
         // Éviter les doublons
         const newTracks = longTermTracks.filter(track =>
-            !allTracks.some(t => t.id === track.id)
+            !tracks.some(t => t.id === track.id)
         );
-        allTracks = [...allTracks, ...newTracks];
+        tracks = [...tracks, ...newTracks];
         console.log(`Ajout de ${newTracks.length} titres préférés (long terme)`);
       }
     } catch (error) {
@@ -193,9 +193,9 @@ async function generateQuestionsFromAllSources(userId, count = 10, quizType = 'm
       if (savedTracks && savedTracks.length > 0) {
         // Éviter les doublons
         const newTracks = savedTracks.filter(track =>
-            !allTracks.some(t => t.id === track.id)
+            !tracks.some(t => t.id === track.id)
         );
-        allTracks = [...allTracks, ...newTracks];
+        tracks = [...tracks, ...newTracks];
         console.log(`Ajout de ${newTracks.length} titres sauvegardés`);
       }
     } catch (error) {
@@ -208,9 +208,9 @@ async function generateQuestionsFromAllSources(userId, count = 10, quizType = 'm
       if (recentTracks && recentTracks.length > 0) {
         // Éviter les doublons
         const newTracks = recentTracks.filter(track =>
-            !allTracks.some(t => t.id === track.id)
+            !tracks.some(t => t.id === track.id)
         );
-        allTracks = [...allTracks, ...newTracks];
+        tracks = [...tracks, ...newTracks];
         console.log(`Ajout de ${newTracks.length} titres récemment écoutés`);
       }
     } catch (error) {
@@ -230,9 +230,9 @@ async function generateQuestionsFromAllSources(userId, count = 10, quizType = 'm
             if (playlistTracks && playlistTracks.length > 0) {
               // Éviter les doublons
               const newTracks = playlistTracks.filter(track =>
-                  track && !allTracks.some(t => t.id === track.id)
+                  track && !tracks.some(t => t.id === track.id)
               );
-              allTracks = [...allTracks, ...newTracks];
+              tracks = [...tracks, ...newTracks];
               console.log(`Ajout de ${newTracks.length} titres de la playlist "${playlist.name}"`);
             }
           } catch (playlistError) {
@@ -305,7 +305,7 @@ async function generateQuestionsFromAllSources(userId, count = 10, quizType = 'm
     }
 
     // 7. Extraire les albums des pistes
-    const trackAlbums = allTracks.map(track => track.album)
+    const trackAlbums = tracks.map(track => track.album)
         .filter((album, index, self) =>
             index === self.findIndex(a => a.id === album.id)
         );
@@ -318,24 +318,24 @@ async function generateQuestionsFromAllSources(userId, count = 10, quizType = 'm
     allAlbums = [...allAlbums, ...newTrackAlbums];
     console.log(`Ajout de ${newTrackAlbums.length} albums extraits des pistes`);
 
-    console.log(`Données collectées: ${allTracks.length} pistes, ${allArtists.length} artistes, ${allAlbums.length} albums`);
+    console.log(`Données collectées: ${tracks.length} pistes, ${allArtists.length} artistes, ${allAlbums.length} albums`);
 
     // 8. Vérifier qu'il y a suffisamment de données
-    if (allTracks.length < 5 && allArtists.length < 5) {
+    if (tracks.length < 5 && allArtists.length < 5) {
       console.error("Pas assez de données Spotify pour générer des questions");
       throw new Error("Données Spotify insuffisantes");
     }
 
     // 9. Compte le nombre de pistes avec prévisualisation
-    const tracksWithPreview = allTracks.filter(track => track.preview_url);
-    console.log(`Pistes avec prévisualisation: ${tracksWithPreview.length}/${allTracks.length}`);
+    const tracksWithPreview = tracks.filter(track => track.preview_url);
+    console.log(`Pistes avec prévisualisation: ${tracksWithPreview.length}/${tracks.length}`);
 
     // 10. Générer les questions selon le type de quiz
     let questions = [];
     if (quizType === 'multiple_choice') {
-      questions = generateMultipleChoiceQuestions(allTracks, allArtists, allAlbums, count);
+      questions = generateMultipleChoiceQuestions(tracks, allArtists, allAlbums, count);
     } else {
-      questions = generateFreeTextQuestions(allTracks, allArtists, allAlbums, count);
+      questions = generateFreeTextQuestions(tracks, allArtists, allAlbums, count);
     }
 
     // 11. Éliminer les doublons potentiels
