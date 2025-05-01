@@ -1,5 +1,5 @@
 # Dockerfile
-FROM node:20-slim AS builder
+FROM node:22-slim AS builder
 WORKDIR /app
 COPY package.json package-lock.json* ./
 # Create prisma directory and copy schema
@@ -8,12 +8,12 @@ COPY prisma/schema.prisma ./prisma/
 # Install OpenSSL and other dependencies required for WebSockets
 RUN apt-get update -y && apt-get install -y openssl ca-certificates
 # Dans la section RUN npm install
-RUN npm install http-cookie-agent tough-cookie
+RUN npm install undici@^7
 RUN npx prisma generate
 COPY . .
 RUN npm run build
 
-FROM node:20-slim AS runner
+FROM node:22-slim AS runner
 WORKDIR /app
 # Install essential libraries and networking tools for debugging
 RUN apt-get update -y && \
