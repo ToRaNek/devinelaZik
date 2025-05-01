@@ -33,13 +33,30 @@ export default function EnhancedQuestionComponent({
     }, [localTimer, answerStatus]);
 
     // Gestion de l'audio avec lecture automatique
+    // Dans components/EnhancedQuestionComponent.jsx, modifiez le useEffect qui gère l'audio
     useEffect(() => {
         if (question && question.previewUrl && audioRef.current) {
             // Réinitialiser les erreurs audio
             setAudioError(false);
 
+            console.log("Chargement audio:", question.previewUrl);
+
             // Utiliser directement l'URL de prévisualisation
             audioRef.current.src = question.previewUrl;
+
+            // Ajout d'événements pour le débogage
+            const handleCanPlay = () => {
+                console.log("Audio peut être lu maintenant");
+            };
+
+            const handleError = (e) => {
+                console.error("Erreur de lecture audio:", e);
+                console.error("Détails de l'erreur:", e.target.error);
+                setAudioError(true);
+            };
+
+            audioRef.current.addEventListener('canplay', handleCanPlay);
+            audioRef.current.addEventListener('error', handleError);
 
             // Lecture automatique
             const playPromise = audioRef.current.play();
@@ -50,15 +67,17 @@ export default function EnhancedQuestionComponent({
                     setAudioError(true);
                 });
             }
-        }
 
-        // Nettoyage de l'audio lors du changement de question
-        return () => {
-            if (audioRef.current) {
-                audioRef.current.pause();
-                audioRef.current.src = '';
-            }
-        };
+            // Nettoyage des événements lors du démontage
+            return () => {
+                if (audioRef.current) {
+                    audioRef.current.removeEventListener('canplay', handleCanPlay);
+                    audioRef.current.removeEventListener('error', handleError);
+                    audioRef.current.pause();
+                    audioRef.current.src = '';
+                }
+            };
+        }
     }, [question]);
 
     const handleMultipleChoiceSubmit = () => {
@@ -124,14 +143,25 @@ export default function EnhancedQuestionComponent({
 
                 {question.type === 'song' && (
                     <div className="audio-player">
-                        {question.previewUrl && (
-                            <audio
-                                ref={audioRef}
-                                src={question.previewUrl}
-                                controls
-                                autoPlay
-                                onError={() => setAudioError(true)}
-                            ></audio>
+                        {question.previewUrl ? (
+                            <>
+                                <audio
+                                    ref={audioRef}
+                                    src={question.previewUrl}
+                                    controls
+                                    autoPlay
+                                    onError={() => setAudioError(true)}
+                                ></audio>
+                                {audioError && (
+                                    <p className="audio-error">
+                                        Problème de lecture audio. Essayez de cliquer sur Play.
+                                    </p>
+                                )}
+                            </>
+                        ) : (
+                            <p className="audio-unavailable">
+                                Prévisualisation audio non disponible pour cette piste.
+                            </p>
                         )}
                         {question.albumCover && (
                             <img
@@ -141,12 +171,7 @@ export default function EnhancedQuestionComponent({
                             />
                         )}
                         <div className="hint">
-                            <p>Écoutez l'extrait et devinez le titre...</p>
-                            {audioError && (
-                                <p className="audio-error">
-                                    Problème de lecture audio. Essayez de cliquer sur Play.
-                                </p>
-                            )}
+                            <p>Devinez le titre...</p>
                         </div>
                     </div>
                 )}
@@ -160,6 +185,20 @@ export default function EnhancedQuestionComponent({
                     </div>
                 )}
             </div>
+
+            // In EnhancedQuestionComponent.jsx, enhance the audio player
+            <audio
+                ref={audioRef}
+                src={question.previewUrl}
+                controls
+                autoPlay
+                onError={(e) => {
+                    console.error('Audio error:', e);
+                    console.error('Audio error details:', e.target.error);
+                    setAudioError(true);
+                }}
+                onCanPlay={() => console.log('Audio can play now')}
+            ></audio>
 
             {/* Système de réponse */}
             {isMultipleChoice ? (

@@ -4,7 +4,16 @@ const http = require('http');
 const next = require('next');
 const { Server } = require('socket.io');
 const { PrismaClient } = require('@prisma/client');
-const { generateEnhancedQuestions, generateMultipleChoiceQuestions, generateFreeTextQuestions, enrichQuestionsWithSpotifyIds } = require('./lib/enhancedSpotifyUtils');
+const {
+  getUserTopTracks,
+  getUserSavedTracks,
+  getRecentlyPlayedTracks,
+  getUserTopArtists,
+  getArtistAlbums,
+  getUserPlaylists,
+  getPlaylistTracks
+} = require('./lib/spotifyPlayDL');
+const { generateMultipleChoiceQuestions, generateFreeTextQuestions } = require('./lib/enhancedSpotifyUtils');
 
 const prisma = new PrismaClient();
 const dev = process.env.NODE_ENV !== 'production';
@@ -112,7 +121,6 @@ function removeDuplicateQuestions(questions) {
   });
 }
 
-// Fonction pour générer des questions à partir de toutes les sources
 /**
  * Génère des questions à partir de toutes les sources disponibles
  * @param {string} userId - ID de l'utilisateur
@@ -122,340 +130,241 @@ function removeDuplicateQuestions(questions) {
  */
 async function generateQuestionsFromAllSources(userId, count = 10, quizType = 'multiple_choice') {
   try {
-    console.log(`Génération de ${count} questions à partir de toutes les sources pour l'utilisateur ${userId}`);
+    console.log(`Génération de ${count} questions à partir des données Spotify pour l'utilisateur ${userId}`);
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
         accounts: {
           where: {
-            provider: { in: ['spotify', 'deezer'] }
+            provider: { in: ['spotify'] }
           }
         }
       }
     });
 
     if (!user || !user.accounts || user.accounts.length === 0) {
-      console.log('Aucun compte de musique lié trouvé pour cet utilisateur, utilisation des pistes YouTube');
-      return generateQuestionsFromYouTube(count, quizType);
+      console.log('Aucun compte Spotify lié trouvé pour cet utilisateur');
+      throw new Error('Utilisateur sans compte Spotify');
     }
 
-    // Collecter des questions de toutes les sources disponibles
-    let allQuestions = [];
-    let allTracks = []; // Collecter toutes les pistes pour enrichir les questions
+    // Collecter les données de Spotify
+    let allTracks = [];
+    let allArtists = [];
+    let allAlbums = [];
 
-    // 1. Pour chaque compte connecté, récupérer des questions
-    for (const account of user.accounts) {
-      let sourceQuestions = [];
+    // 1. Récupérer les titres préférés (court, moyen et long terme)
+    try {
+      // Court terme (4 semaines)
+      const shortTermTracks = await getUserTopTracks(userId, 'short_term', 50);
+      if (shortTermTracks && shortTermTracks.length > 0) {
+        allTracks = [...allTracks, ...shortTermTracks];
+        console.log(`Ajout de ${shortTermTracks.length} titres préférés (court terme)`);
+      }
 
-      if (account.provider === 'spotify') {
-        // Récupérer les pistes Spotify
-        try {
-          const topTracks = await getUserTopTracks(userId, 'medium_term', 50);
-          const savedTracks = await getUserSavedTracks(userId, 50);
-          const recentTracks = await getRecentlyPlayedTracks(userId, 50);
+      // Moyen terme (6 mois)
+      const mediumTermTracks = await getUserTopTracks(userId, 'medium_term', 50);
+      if (mediumTermTracks && mediumTermTracks.length > 0) {
+        // Éviter les doublons en vérifiant les IDs
+        const newTracks = mediumTermTracks.filter(track =>
+            !allTracks.some(t => t.id === track.id)
+        );
+        allTracks = [...allTracks, ...newTracks];
+        console.log(`Ajout de ${newTracks.length} titres préférés (moyen terme)`);
+      }
 
-          // Combiner toutes les pistes (en évitant les doublons)
-          const trackIds = new Set();
-          const uniqueTracks = [];
+      // Long terme (plusieurs années)
+      const longTermTracks = await getUserTopTracks(userId, 'long_term', 50);
+      if (longTermTracks && longTermTracks.length > 0) {
+        // Éviter les doublons
+        const newTracks = longTermTracks.filter(track =>
+            !allTracks.some(t => t.id === track.id)
+        );
+        allTracks = [...allTracks, ...newTracks];
+        console.log(`Ajout de ${newTracks.length} titres préférés (long terme)`);
+      }
+    } catch (error) {
+      console.error("Erreur lors de la récupération des titres préférés:", error);
+    }
 
-          [...topTracks, ...savedTracks, ...recentTracks].forEach(track => {
-            if (!trackIds.has(track.id)) {
-              trackIds.add(track.id);
-              uniqueTracks.push(track);
+    // 2. Récupérer les titres sauvegardés (likés)
+    try {
+      const savedTracks = await getUserSavedTracks(userId, 50);
+      if (savedTracks && savedTracks.length > 0) {
+        // Éviter les doublons
+        const newTracks = savedTracks.filter(track =>
+            !allTracks.some(t => t.id === track.id)
+        );
+        allTracks = [...allTracks, ...newTracks];
+        console.log(`Ajout de ${newTracks.length} titres sauvegardés`);
+      }
+    } catch (error) {
+      console.error("Erreur lors de la récupération des titres sauvegardés:", error);
+    }
+
+    // 3. Récupérer l'historique d'écoute récent
+    try {
+      const recentTracks = await getRecentlyPlayedTracks(userId, 50);
+      if (recentTracks && recentTracks.length > 0) {
+        // Éviter les doublons
+        const newTracks = recentTracks.filter(track =>
+            !allTracks.some(t => t.id === track.id)
+        );
+        allTracks = [...allTracks, ...newTracks];
+        console.log(`Ajout de ${newTracks.length} titres récemment écoutés`);
+      }
+    } catch (error) {
+      console.error("Erreur lors de la récupération de l'historique d'écoute:", error);
+    }
+
+    // 4. Récupérer les playlists et leurs titres
+    try {
+      const playlists = await getUserPlaylists(userId, 10);
+      if (playlists && playlists.length > 0) {
+        // Prendre les 5 premières playlists maximum pour éviter de surcharger l'API
+        const limitedPlaylists = playlists.slice(0, 5);
+
+        for (const playlist of limitedPlaylists) {
+          try {
+            const playlistTracks = await getPlaylistTracks(playlist.id, userId, 30);
+            if (playlistTracks && playlistTracks.length > 0) {
+              // Éviter les doublons
+              const newTracks = playlistTracks.filter(track =>
+                  track && !allTracks.some(t => t.id === track.id)
+              );
+              allTracks = [...allTracks, ...newTracks];
+              console.log(`Ajout de ${newTracks.length} titres de la playlist "${playlist.name}"`);
             }
-          });
-
-          // Ajouter à la collection globale
-          allTracks.push(...uniqueTracks);
-
-          // Générer les questions avec l'utilitaire existant
-          sourceQuestions = await generateEnhancedQuestions(userId, count * 2, quizType);
-        } catch (error) {
-          console.error('Erreur lors de la récupération des pistes Spotify:', error);
+          } catch (playlistError) {
+            console.error(`Erreur lors de la récupération des titres de la playlist ${playlist.name}:`, playlistError);
+            continue;
+          }
         }
-      } else if (account.provider === 'deezer') {
-        // Pour Deezer - utiliser YouTube comme solution
-        console.log("Support Deezer non implémenté, utilisation de YouTube");
-        const deezerQuestions = await generateQuestionsFromYouTube(Math.floor(count / 2), quizType);
-        sourceQuestions = deezerQuestions;
+      }
+    } catch (error) {
+      console.error("Erreur lors de la récupération des playlists:", error);
+    }
+
+    // 5. Récupérer les artistes préférés
+    try {
+      // Court terme
+      const shortTermArtists = await getUserTopArtists(userId, 'short_term', 50);
+      if (shortTermArtists && shortTermArtists.length > 0) {
+        allArtists = [...allArtists, ...shortTermArtists];
+        console.log(`Ajout de ${shortTermArtists.length} artistes préférés (court terme)`);
       }
 
-      // Ajouter les questions à notre pool global
-      allQuestions = [...allQuestions, ...sourceQuestions];
-    }
-
-    // S'il n'y a pas assez de questions, compléter avec des pistes YouTube
-    if (allQuestions.length < count) {
-      console.log(`Pas assez de questions (${allQuestions.length}/${count}), complément avec YouTube`);
-      const additionalQuestions = await generateQuestionsFromYouTube(count - allQuestions.length, quizType);
-      allQuestions = [...allQuestions, ...additionalQuestions];
-    }
-
-    // Éliminer les doublons potentiels
-    const uniqueQuestions = removeDuplicateQuestions(allQuestions);
-
-    // Enrichir toutes les questions avec des URL de streaming YouTube
-    // Cette étape transforme les prévisualisations Spotify en URL de streaming YouTube
-    const enrichedQuestions = await enrichQuestionsWithYouTubeUrls(uniqueQuestions);
-
-    // Prioritiser les questions avec prévisualisations audio
-    const questionsWithAudio = enrichedQuestions.filter(q => q.previewUrl);
-    const questionsWithoutAudio = enrichedQuestions.filter(q => !q.previewUrl);
-
-    // Mélanger les deux groupes séparément
-    const shuffledWithAudio = shuffleArray(questionsWithAudio);
-    const shuffledWithoutAudio = shuffleArray(questionsWithoutAudio);
-
-    // Prendre d'abord les questions avec extraits audio, puis compléter avec celles sans
-    let selectedQuestions = [...shuffledWithAudio];
-    if (selectedQuestions.length < count) {
-      selectedQuestions = [...selectedQuestions, ...shuffledWithoutAudio.slice(0, count - selectedQuestions.length)];
-    } else {
-      selectedQuestions = selectedQuestions.slice(0, count);
-    }
-
-    // Réinitialiser les numéros de round
-    const finalQuestions = selectedQuestions.map((q, index) => ({
-      ...q,
-      id: `q-${Date.now()}-${index}`,
-      round: index + 1
-    }));
-
-    console.log(`${finalQuestions.length} questions générées avec succès`);
-    console.log(`Dont ${finalQuestions.filter(q => q.type === 'song').length} questions de type "song"`);
-    console.log(`Dont ${finalQuestions.filter(q => q.previewUrl).length} questions avec audio`);
-
-    return finalQuestions;
-  } catch (error) {
-    console.error('Erreur lors de la génération des questions:', error);
-    // En cas d'échec total, générer des questions génériques avec audio YouTube
-    return generateQuestionsFromYouTube(count, quizType);
-  }
-}
-
-/**
- * Génère des questions à partir de YouTube pour des artistes et titres populaires
- * @param {number} count - Nombre de questions à générer
- * @param {string} quizType - Type de quiz
- * @returns {Promise<Array>} - Questions générées
- */
-async function generateQuestionsFromYouTube(count = 10, quizType = 'multiple_choice') {
-  try {
-    console.log(`Génération de ${count} questions à partir de YouTube`);
-
-    // Listes d'artistes et titres populaires pour générer des questions variées
-    const popularArtists = [
-      'Queen', 'The Beatles', 'Michael Jackson', 'Adele', 'Billie Eilish',
-      'Taylor Swift', 'Daft Punk', 'Ed Sheeran', 'Beyoncé', 'Dua Lipa',
-      'The Weeknd', 'Coldplay', 'Lady Gaga', 'Justin Bieber', 'Ariana Grande',
-      'Kendrick Lamar', 'Bruno Mars', 'Imagine Dragons', 'BTS', 'Post Malone'
-    ];
-
-    const popularSongs = [
-      'Bohemian Rhapsody', 'Shape of You', 'Blinding Lights', 'Bad Guy',
-      'Uptown Funk', 'Hello', 'Despacito', 'Someone Like You', 'Watermelon Sugar',
-      'Don\'t Start Now', 'Get Lucky', 'Thriller', 'Believer', 'Levitating',
-      'Heather', 'Viva La Vida', 'Bad Romance', 'Dynamite', 'Sicko Mode', 'One Dance'
-    ];
-
-    // Mélanger pour plus de variété
-    const shuffledArtists = shuffleArray(popularArtists);
-    const shuffledSongs = shuffleArray(popularSongs);
-
-    // Distribuer le nombre de questions (70% chansons, 30% artistes)
-    const songCount = Math.ceil(count * 0.7);
-    const artistCount = count - songCount;
-
-    let questions = [];
-
-    // Questions sur les chansons
-    for (let i = 0; i < songCount; i++) {
-      const artistIndex = i % shuffledArtists.length;
-      const songIndex = i % shuffledSongs.length;
-
-      const artist = shuffledArtists[artistIndex];
-      const song = shuffledSongs[songIndex];
-
-      // Générer l'URL de streaming
-      const streamingUrl = `/api/audio/stream?q=${encodeURIComponent(`${artist} ${song}`)}`;
-
-      // Créer la question
-      const question = {
-        type: 'song',
-        quizType: quizType,
-        question: `Quel est ce titre de ${artist} ?`,
-        previewUrl: streamingUrl,
-        answer: song,
-        artistName: artist,
-        albumCover: `/api/placeholder/300/300?text=${encodeURIComponent(artist)}`, // Image temporaire
-      };
-
-      // Ajouter les options pour les questions à choix multiples
-      if (quizType === 'multiple_choice') {
-        // Sélectionner des mauvaises réponses parmi les autres chansons
-        const wrongOptions = shuffledSongs
-            .filter(s => s !== song)
-            .slice(0, 3);
-
-        question.options = shuffleArray([song, ...wrongOptions]);
-      } else {
-        // Format pour les questions à texte libre
-        question.displayFormat = `${song} (${artist})`;
-      }
-
-      questions.push(question);
-    }
-
-    // Questions sur les artistes
-    for (let i = 0; i < artistCount; i++) {
-      const artistIndex = i % shuffledArtists.length;
-      const songIndex = i % shuffledSongs.length;
-
-      const artist = shuffledArtists[artistIndex];
-      const song = shuffledSongs[songIndex];
-
-      // Générer l'URL de streaming
-      const streamingUrl = `/api/audio/stream?q=${encodeURIComponent(`${artist} ${song}`)}`;
-
-      // Créer la question
-      const question = {
-        type: 'artist',
-        quizType: quizType,
-        question: "Qui est l'artiste de ce morceau ?",
-        previewUrl: streamingUrl,
-        answer: artist,
-        artistName: artist,
-        albumCover: `/api/placeholder/300/300?text=${encodeURIComponent(artist)}`, // Image temporaire
-      };
-
-      // Ajouter les options pour les questions à choix multiples
-      if (quizType === 'multiple_choice') {
-        // Sélectionner des mauvaises réponses parmi les autres artistes
-        const wrongOptions = shuffledArtists
-            .filter(a => a !== artist)
-            .slice(0, 3);
-
-        question.options = shuffleArray([artist, ...wrongOptions]);
-      } else {
-        // Format pour les questions à texte libre
-        question.displayFormat = artist;
-      }
-
-      questions.push(question);
-    }
-
-    // Mélanger les questions et ajouter les IDs
-    return shuffleArray(questions).map((q, index) => ({
-      ...q,
-      id: `q-yt-${Date.now()}-${index}`
-    }));
-  } catch (error) {
-    console.error('Erreur lors de la génération des questions YouTube:', error);
-
-    // En cas d'erreur, retourner des questions basiques sans prévisualisations
-    return generateBasicQuestions(count, quizType);
-  }
-}
-
-/**
- * Enrichit les questions avec des URL de streaming YouTube
- * @param {Array} questions - Questions à enrichir
- * @returns {Promise<Array>} - Questions enrichies
- */
-async function enrichQuestionsWithYouTubeUrls(questions) {
-  return questions.map(question => {
-    if (question.type === 'song' || question.type === 'artist') {
-      // Construire la requête de recherche
-      const searchQuery = question.type === 'song'
-          ? `${question.artistName} ${question.answer}`
-          : question.artistName;
-
-      // Générer l'URL de streaming
-      const streamingUrl = `/api/audio/stream?q=${encodeURIComponent(searchQuery)}`;
-
-      // Remplacer l'URL de prévisualisation Spotify par notre URL de streaming YouTube
-      return {
-        ...question,
-        previewUrl: streamingUrl
-      };
-    }
-
-    // Conserver les autres questions inchangées
-    return question;
-  });
-}
-
-/**
- * Génère des questions basiques sans audio (solution de dernier recours)
- * @param {number} count - Nombre de questions
- * @param {string} quizType - Type de quiz
- * @returns {Array} - Questions basiques
- */
-function generateBasicQuestions(count, quizType) {
-  // Code pour générer des questions basiques en cas d'échec complet
-  // Cette fonction est une solution de dernier recours
-
-  // [Code similaire à generateQuestionsFromYouTube mais sans les URL de streaming]
-
-  // Retourne des questions sans prévisualisations
-  // Ce code serait similaire mais sans les URLs d'audio
-}
-
-/**
- * Génère des questions à partir de pistes populaires récupérées via spotify-url-info
- * @param {number} count - Nombre de questions à générer
- * @param {string} quizType - Type de quiz: 'multiple_choice' ou 'free_text'
- * @returns {Promise<Array>} - Questions générées
- */
-async function generateQuestionsFromPopularTracks(count = 10, quizType = 'multiple_choice') {
-  try {
-    console.log(`Génération de ${count} questions à partir de pistes populaires`);
-
-    // Récupérer des pistes populaires
-    const popularTracks = await getPopularTracks(count * 2);
-
-    if (popularTracks.length === 0) {
-      console.error("Impossible de récupérer des pistes populaires");
-      return [];
-    }
-
-    // Extraire les artistes et albums de ces pistes
-    const artists = popularTracks
-        .flatMap(track => track.artists)
-        .filter((artist, index, self) =>
-            artist && index === self.findIndex(a => a.id === artist.id)
+      // Moyen terme
+      const mediumTermArtists = await getUserTopArtists(userId, 'medium_term', 50);
+      if (mediumTermArtists && mediumTermArtists.length > 0) {
+        // Éviter les doublons
+        const newArtists = mediumTermArtists.filter(artist =>
+            !allArtists.some(a => a.id === artist.id)
         );
+        allArtists = [...allArtists, ...newArtists];
+        console.log(`Ajout de ${newArtists.length} artistes préférés (moyen terme)`);
+      }
 
-    const albums = popularTracks
-        .map(track => track.album)
+      // Long terme
+      const longTermArtists = await getUserTopArtists(userId, 'long_term', 50);
+      if (longTermArtists && longTermArtists.length > 0) {
+        // Éviter les doublons
+        const newArtists = longTermArtists.filter(artist =>
+            !allArtists.some(a => a.id === artist.id)
+        );
+        allArtists = [...allArtists, ...newArtists];
+        console.log(`Ajout de ${newArtists.length} artistes préférés (long terme)`);
+      }
+    } catch (error) {
+      console.error("Erreur lors de la récupération des artistes préférés:", error);
+    }
+
+    // 6. Récupérer les albums des artistes préférés
+    try {
+      // Limiter à 10 artistes pour éviter de surcharger l'API
+      const limitedArtists = allArtists.slice(0, 10);
+
+      for (const artist of limitedArtists) {
+        try {
+          const artistAlbums = await getArtistAlbums(artist.id, userId);
+          if (artistAlbums && artistAlbums.length > 0) {
+            // Éviter les doublons
+            const newAlbums = artistAlbums.filter(album =>
+                !allAlbums.some(a => a.id === album.id)
+            );
+            allAlbums = [...allAlbums, ...newAlbums];
+            console.log(`Ajout de ${newAlbums.length} albums de ${artist.name}`);
+          }
+        } catch (albumError) {
+          console.error(`Erreur lors de la récupération des albums de ${artist.name}:`, albumError);
+          continue;
+        }
+      }
+    } catch (error) {
+      console.error("Erreur lors de la récupération des albums:", error);
+    }
+
+    // 7. Extraire les albums des pistes
+    const trackAlbums = allTracks.map(track => track.album)
         .filter((album, index, self) =>
-            album && index === self.findIndex(a => a.id === album.id)
+            index === self.findIndex(a => a.id === album.id)
         );
 
-    // Générer des questions selon le type de quiz
+    // Ajouter les albums extraits des pistes (s'ils ne sont pas déjà présents)
+    const newTrackAlbums = trackAlbums.filter(album =>
+        !allAlbums.some(a => a.id === album.id)
+    );
+
+    allAlbums = [...allAlbums, ...newTrackAlbums];
+    console.log(`Ajout de ${newTrackAlbums.length} albums extraits des pistes`);
+
+    console.log(`Données collectées: ${allTracks.length} pistes, ${allArtists.length} artistes, ${allAlbums.length} albums`);
+
+    // 8. Vérifier qu'il y a suffisamment de données
+    if (allTracks.length < 5 && allArtists.length < 5) {
+      console.error("Pas assez de données Spotify pour générer des questions");
+      throw new Error("Données Spotify insuffisantes");
+    }
+
+    // 9. Compte le nombre de pistes avec prévisualisation
+    const tracksWithPreview = allTracks.filter(track => track.preview_url);
+    console.log(`Pistes avec prévisualisation: ${tracksWithPreview.length}/${allTracks.length}`);
+
+    // 10. Générer les questions selon le type de quiz
     let questions = [];
     if (quizType === 'multiple_choice') {
-      questions = generateMultipleChoiceQuestions(popularTracks, artists, albums, count);
+      questions = generateMultipleChoiceQuestions(allTracks, allArtists, allAlbums, count);
     } else {
-      questions = generateFreeTextQuestions(popularTracks, artists, albums, count);
+      questions = generateFreeTextQuestions(allTracks, allArtists, allAlbums, count);
     }
 
-    // Ajouter des IDs et numéros de rounds
-    const finalQuestions = questions.map((q, index) => ({
-      ...q,
-      id: `q-${Date.now()}-${index}`,
-      round: index + 1
-    }));
+    // 11. Éliminer les doublons potentiels
+    questions = removeDuplicateQuestions(questions);
 
-    console.log(`${finalQuestions.length} questions générées à partir de pistes populaires`);
-    return finalQuestions;
+    console.log(`${questions.length} questions générées avec succès`);
+    console.log(`Dont ${questions.filter(q => q.type === 'song').length} questions de type "song"`);
+    console.log(`Dont ${questions.filter(q => q.previewUrl).length} questions avec prévisualisation audio`);
+
+    // 12. S'assurer d'avoir suffisamment de questions
+    if (questions.length < count) {
+      console.warn(`Seulement ${questions.length}/${count} questions générées, ajustement nécessaire`);
+
+      // Si nous n'avons pas assez de questions, nous pouvons adapter en:
+      // 1. Réutilisant certaines questions (avec variations si possible)
+      // 2. Généralement génère moins de questions au total
+
+      // Dans ce cas, nous réduisons simplement le nombre de questions
+      console.log(`Le jeu sera plus court: ${questions.length} questions au lieu de ${count}`);
+    }
+
+    return questions;
   } catch (error) {
-    console.error('Erreur lors de la génération des questions à partir de pistes populaires:', error);
-    return [];
+    console.error('Erreur lors de la génération des questions:', error);
+    throw error;
   }
 }
 
+// Lancement de l'application
 app.prepare().then(() => {
   const server = express();
   const httpServer = http.createServer(server);
@@ -592,14 +501,6 @@ app.prepare().then(() => {
           userId: data.user.id,
           user: data.user
         });
-
-        // SUPPRIMÉ: Ne plus ajouter de message quand un joueur rejoint
-        // Message système
-        // io.to(data.roomCode).emit('message', {
-        //   system: true,
-        //   message: `${data.user?.pseudo || 'Un joueur'} a rejoint la partie!`,
-        //   timestamp: Date.now()
-        // });
       } catch (error) {
         console.error('Error in joinRoom:', error);
         socket.emit('error', { message: `Failed to join room: ${error.message}` });
@@ -630,20 +531,19 @@ app.prepare().then(() => {
           return;
         }
 
-        // Generate questions using your enhanced function
+        // Generate questions using data from Spotify
         let questions = [];
         try {
           console.log(`Generating questions for user ${socket.userId}`);
 
-          // Utiliser la fonction améliorée qui utilise toutes les sources disponibles
+          // Générer des questions à partir des données Spotify
           questions = await generateQuestionsFromAllSources(socket.userId, data.rounds || 10, data.quizType || 'multiple_choice');
 
           console.log(`Generated ${questions.length} questions`);
         } catch (error) {
           console.error('Error generating questions:', error);
-
-          // En cas d'erreur, utiliser les pistes populaires
-          questions = await generateQuestionsFromPopularTracks(data.rounds || 10, data.quizType || 'multiple_choice');
+          socket.emit('error', { message: `Failed to generate questions: ${error.message}` });
+          return;
         }
 
         // Store game data
@@ -652,7 +552,7 @@ app.prepare().then(() => {
           status: 'playing',
           hostId: socket.userId,
           currentRound: 0,
-          totalRounds: data.rounds || 10,
+          totalRounds: questions.length,
           questions: questions,
           quizType: data.quizType || 'multiple_choice',
           scores: roomData.players.map(player => ({
@@ -672,7 +572,7 @@ app.prepare().then(() => {
 
         // Inform clients that game is starting
         io.to(data.roomCode).emit('gameStarted', {
-          rounds: data.rounds || 10,
+          rounds: questions.length,
           quizType: data.quizType || 'multiple_choice',
           players: roomData.players.length,
           timestamp: Date.now()

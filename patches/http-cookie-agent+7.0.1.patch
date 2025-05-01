@@ -1,0 +1,18 @@
+diff --git a/node_modules/http-cookie-agent/dist/undici/cookie_agent.js b/node_modules/http-cookie-agent/dist/undici/cookie_agent.js
+index 123456..789012 1234567
+--- a/node_modules/http-cookie-agent/dist/undici/cookie_agent.js
++++ b/node_modules/http-cookie-agent/dist/undici/cookie_agent.js
+@@ -15,7 +15,14 @@
+         constructor(options = {}) {
+             super(options);
+             this.cookies = options.cookies;
+-            this.compose = this.dispatch;
++
++            // Add compatibility fix for Node 22
++            if (typeof this.dispatch === 'function') {
++                this.compose = this.dispatch;
++            } else {
++                // Fallback implementation
++                this.compose = this.options.dispatch || ((options, handler) => handler.onConnect());
++            }
+         }

@@ -30,7 +30,7 @@ export const authOptions = {
       clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
       authorization: {
         params: {
-          scope: "user-read-email user-top-read user-read-private"
+          scope: "user-read-email user-top-read user-read-private user-library-read user-read-recently-played playlist-read-private"
         }
       },
       // Add this option to catch and handle errors better
