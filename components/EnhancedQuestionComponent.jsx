@@ -13,13 +13,34 @@ export default function EnhancedQuestionComponent({
     const [audioError, setAudioError] = useState(false);
     const audioRef = useRef(null);
 
+    const [isYouTubeEmbed, setIsYouTubeEmbed] = useState(false);
+
     // Ne rien afficher si pas de question
     if (!question) return null;
+
 
     // Mettre à jour le timer local quand le timer externe change
     useEffect(() => {
         setLocalTimer(timer);
     }, [timer]);
+
+    useEffect(() => {
+        if (question && question.previewUrl) {
+            // Check if this is a YouTube embed URL
+            setIsYouTubeEmbed(question.previewUrl.includes('youtube.com/embed/'));
+
+            // Handle audio source depending on type
+            if (!isYouTubeEmbed && audioRef.current) {
+                // Regular audio URL
+                audioRef.current.src = question.previewUrl;
+                audioRef.current.play().catch(e => {
+                    console.error("Error playing audio:", e);
+                    setAudioError(true);
+                });
+            }
+            // YouTube embeds will be handled by the iframe
+        }
+    }, [question]);
 
     // Animation continue du timer
     useEffect(() => {
@@ -33,52 +54,60 @@ export default function EnhancedQuestionComponent({
     }, [localTimer, answerStatus]);
 
     // Gestion de l'audio avec lecture automatique
-    // Dans components/EnhancedQuestionComponent.jsx, modifiez le useEffect qui gère l'audio
+    // In your useEffect for audio handling
     useEffect(() => {
         if (question && question.previewUrl && audioRef.current) {
-            // Réinitialiser les erreurs audio
-            setAudioError(false);
+            console.log("Attempting to load audio from:", question.previewUrl);
 
-            console.log("Chargement audio:", question.previewUrl);
-
-            // Utiliser directement l'URL de prévisualisation
-            audioRef.current.src = question.previewUrl;
-
-            // Ajout d'événements pour le débogage
-            const handleCanPlay = () => {
-                console.log("Audio peut être lu maintenant");
-            };
-
-            const handleError = (e) => {
-                console.error("Erreur de lecture audio:", e);
-                console.error("Détails de l'erreur:", e.target.error);
-                setAudioError(true);
-            };
-
-            audioRef.current.addEventListener('canplay', handleCanPlay);
-            audioRef.current.addEventListener('error', handleError);
-
-            // Lecture automatique
-            const playPromise = audioRef.current.play();
-
-            if (playPromise !== undefined) {
-                playPromise.catch(error => {
-                    console.error('Erreur de lecture automatique:', error);
+            // Try to load the audio with a timeout
+            const timeoutId = setTimeout(() => {
+                if (!audioRef.current.canPlayThrough) {
+                    console.error("Audio loading timeout");
                     setAudioError(true);
-                });
-            }
+                }
+            }, 5000);
 
-            // Nettoyage des événements lors du démontage
+            // Clear timeout if audio loads successfully
+            const handleCanPlay = () => {
+                clearTimeout(timeoutId);
+                console.log("Audio loaded successfully");
+            };
+
+            audioRef.current.addEventListener('canplaythrough', handleCanPlay);
+
             return () => {
+                clearTimeout(timeoutId);
                 if (audioRef.current) {
-                    audioRef.current.removeEventListener('canplay', handleCanPlay);
-                    audioRef.current.removeEventListener('error', handleError);
-                    audioRef.current.pause();
-                    audioRef.current.src = '';
+                    audioRef.current.removeEventListener('canplaythrough', handleCanPlay);
                 }
             };
         }
     }, [question]);
+
+    // Add this to your audio player component
+    useEffect(() => {
+        if (audioRef.current) {
+            // Listen for when audio starts playing
+            const handlePlay = () => {
+                // Set a timeout to stop after 30 seconds max
+                setTimeout(() => {
+                    if (audioRef.current && !audioRef.current.paused) {
+                        audioRef.current.pause();
+                    }
+                }, 30000); // 30 seconds
+            };
+
+            audioRef.current.addEventListener('play', handlePlay);
+
+            return () => {
+                if (audioRef.current) {
+                    audioRef.current.removeEventListener('play', handlePlay);
+                }
+            };
+        }
+    }, [audioRef.current]);
+
+
 
     const handleMultipleChoiceSubmit = () => {
         if (!selectedAnswer) return;
@@ -145,13 +174,27 @@ export default function EnhancedQuestionComponent({
                     <div className="audio-player">
                         {question.previewUrl ? (
                             <>
-                                <audio
-                                    ref={audioRef}
-                                    src={question.previewUrl}
-                                    controls
-                                    autoPlay
-                                    onError={() => setAudioError(true)}
-                                ></audio>
+                                {isYouTubeEmbed ? (
+                                    // YouTube embed with hidden video
+                                    <div className="youtube-audio-container">
+                                        <iframe
+                                            src={question.previewUrl}
+                                            title="YouTube audio"
+                                            allow="autoplay; encrypted-media"
+                                            className="youtube-audio-iframe"
+                                        ></iframe>
+                                        <p className="audio-source">Audio source: YouTube</p>
+                                    </div>
+                                ) : (
+                                    // Regular audio element
+                                    <audio
+                                        ref={audioRef}
+                                        src={question.previewUrl}
+                                        controls
+                                        autoPlay
+                                        onError={() => setAudioError(true)}
+                                    ></audio>
+                                )}
                                 {audioError && (
                                     <p className="audio-error">
                                         Problème de lecture audio. Essayez de cliquer sur Play.
@@ -163,6 +206,7 @@ export default function EnhancedQuestionComponent({
                                 Prévisualisation audio non disponible pour cette piste.
                             </p>
                         )}
+
                         {question.albumCover && (
                             <img
                                 src={question.albumCover || '/placeholder-album.png'}
@@ -185,20 +229,6 @@ export default function EnhancedQuestionComponent({
                     </div>
                 )}
             </div>
-
-            // In EnhancedQuestionComponent.jsx, enhance the audio player
-            <audio
-                ref={audioRef}
-                src={question.previewUrl}
-                controls
-                autoPlay
-                onError={(e) => {
-                    console.error('Audio error:', e);
-                    console.error('Audio error details:', e.target.error);
-                    setAudioError(true);
-                }}
-                onCanPlay={() => console.log('Audio can play now')}
-            ></audio>
 
             {/* Système de réponse */}
             {isMultipleChoice ? (
