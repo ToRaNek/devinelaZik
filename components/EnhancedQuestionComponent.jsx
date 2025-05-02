@@ -1,4 +1,4 @@
-// components/EnhancedQuestionComponent.jsx - updated version
+// Mise à jour pour components/EnhancedQuestionComponent.jsx
 import { useState, useEffect, useRef } from 'react';
 import FreeTextAnswerComponent from './FreeTextAnswerComponent';
 
@@ -13,8 +13,12 @@ export default function EnhancedQuestionComponent({
     const [localTimer, setLocalTimer] = useState(30);
     const [audioError, setAudioError] = useState(false);
     const [audioLoading, setAudioLoading] = useState(true);
+    const [audioProgress, setAudioProgress] = useState(0);
+    const [audioPlaying, setAudioPlaying] = useState(false);
     const audioRef = useRef(null);
-    const [isYouTubeEmbed, setIsYouTubeEmbed] = useState(false);
+
+    // Nouveaux états pour gérer les différents types d'aperçu audio
+    const [audioType, setAudioType] = useState(null); // 'youtube_embed', 'youtube_direct', 'spotify', etc.
 
     // Ne rien afficher si pas de question
     if (!question) return null;
@@ -24,22 +28,34 @@ export default function EnhancedQuestionComponent({
         setLocalTimer(timer);
     }, [timer]);
 
-    // Detect YouTube embed URLs
+    // Détecter le type d'aperçu audio
     useEffect(() => {
         if (question && question.previewUrl) {
-            const isYoutube = question.previewUrl.includes('youtube.com/embed/');
-            setIsYouTubeEmbed(isYoutube);
+            if (question.previewUrl.includes('youtube.com/embed/')) {
+                setAudioType('youtube_embed');
+            } else if (question.previewUrl.includes('/api/audio-proxy')) {
+                setAudioType('audio_proxy');
+            } else if (question.previewUrl.includes('youtube')) {
+                setAudioType('youtube_direct');
+            } else if (question.previewUrl.includes('spotify.com')) {
+                setAudioType('spotify');
+            } else {
+                setAudioType('direct_audio');
+            }
+
             setAudioLoading(true);
 
-            // Handle regular audio source
-            if (!isYoutube && audioRef.current) {
+            // Gérer l'audio direct seulement (pas YouTube embed)
+            if (!question.previewUrl.includes('youtube.com/embed/') && audioRef.current) {
                 audioRef.current.src = question.previewUrl;
                 audioRef.current.load();
                 audioRef.current.play().catch(e => {
-                    console.error("Error playing audio:", e);
+                    console.error("Erreur de lecture audio:", e);
                     setAudioError(true);
                 });
             }
+        } else {
+            setAudioType(null);
         }
     }, [question]);
 
@@ -54,48 +70,78 @@ export default function EnhancedQuestionComponent({
         return () => clearInterval(interval);
     }, [localTimer, answerStatus]);
 
-    // Audio events handling
+    // Gestion des événements audio
     useEffect(() => {
         if (!audioRef.current) return;
 
         const handleCanPlay = () => {
-            console.log("Audio loaded successfully");
+            console.log("Audio chargé avec succès");
             setAudioLoading(false);
             setAudioError(false);
         };
 
         const handleError = (e) => {
-            console.error("Audio error:", e);
+            console.error("Erreur audio:", e);
             setAudioError(true);
             setAudioLoading(false);
+
+            // Tentative de reprise avec le proxy audio si disponible et si c'est une URL directe YouTube
+            if (audioType === 'youtube_direct' && question.previewMetadata?.videoId) {
+                console.log("Tentative de reprise avec le proxy audio");
+                audioRef.current.src = `/api/audio-proxy?videoId=${question.previewMetadata.videoId}`;
+                audioRef.current.load();
+                audioRef.current.play().catch(e => {
+                    console.error("Erreur de reprise:", e);
+                });
+            }
         };
 
         const handlePlay = () => {
             setAudioError(false);
-            // Set a timeout to stop after 30 seconds max
+            setAudioPlaying(true);
+
+            // Limiter la durée à 30 secondes max
             setTimeout(() => {
                 if (audioRef.current && !audioRef.current.paused) {
                     audioRef.current.pause();
+                    setAudioPlaying(false);
                 }
             }, 30000);
         };
 
-        // Add event listeners
+        const handlePause = () => {
+            setAudioPlaying(false);
+        };
+
+        const handleTimeUpdate = () => {
+            if (audioRef.current) {
+                const duration = audioRef.current.duration || 30;
+                const currentTime = audioRef.current.currentTime || 0;
+                const progress = (currentTime / Math.min(duration, 30)) * 100;
+                setAudioProgress(progress);
+            }
+        };
+
+        // Ajouter les événements
         audioRef.current.addEventListener('canplaythrough', handleCanPlay);
         audioRef.current.addEventListener('error', handleError);
         audioRef.current.addEventListener('play', handlePlay);
+        audioRef.current.addEventListener('pause', handlePause);
+        audioRef.current.addEventListener('timeupdate', handleTimeUpdate);
 
-        // Cleanup
+        // Nettoyage
         return () => {
             if (audioRef.current) {
                 audioRef.current.removeEventListener('canplaythrough', handleCanPlay);
                 audioRef.current.removeEventListener('error', handleError);
                 audioRef.current.removeEventListener('play', handlePlay);
+                audioRef.current.removeEventListener('pause', handlePause);
+                audioRef.current.removeEventListener('timeupdate', handleTimeUpdate);
             }
         };
-    }, [audioRef.current]);
+    }, [audioRef.current, audioType, question]);
 
-    // YouTube iframe load handler
+    // Gestion du chargement de l'iframe YouTube
     const handleYouTubeLoad = () => {
         setAudioLoading(false);
     };
@@ -110,9 +156,44 @@ export default function EnhancedQuestionComponent({
         onSubmitAnswer(answer);
     };
 
+    // Gestion améliorée de la lecture/pause
+    const toggleAudio = () => {
+        if (!audioRef.current) return;
+
+        if (audioRef.current.paused) {
+            audioRef.current.play().catch(e => {
+                console.error("Erreur lors de la lecture:", e);
+                setAudioError(true);
+            });
+        } else {
+            audioRef.current.pause();
+        }
+    };
+
+    const retryAudio = () => {
+        if (!audioRef.current) return;
+
+        setAudioLoading(true);
+        setAudioError(false);
+
+        // Si nous avons des métadonnées et que l'URL directe échoue, essayer avec le proxy
+        if (audioError && question.previewMetadata?.videoId) {
+            audioRef.current.src = `/api/audio-proxy?videoId=${question.previewMetadata.videoId}`;
+        } else {
+            audioRef.current.src = question.previewUrl;
+        }
+
+        audioRef.current.load();
+        audioRef.current.play().catch(e => {
+            console.error("Erreur lors de la reprise:", e);
+            setAudioError(true);
+            setAudioLoading(false);
+        });
+    };
+
     const isMultipleChoice = question.quizType === 'multiple_choice';
 
-    // Improved question title
+    // Titre de question amélioré
     const getQuestionTitle = () => {
         if (question.type === 'song' && question.artistName) {
             return `Quel titre de ${question.artistName} est-ce ?`;
@@ -134,40 +215,102 @@ export default function EnhancedQuestionComponent({
                     ></div>
                 </div>
                 <div className="timer-counter">
-                    <span className={`timer ${localTimer <= 10 ? 'timer-warning' : ''}`}>
-                        {Math.ceil(localTimer)}s
-                    </span>
+          <span className={`timer ${localTimer <= 10 ? 'timer-warning' : ''}`}>
+            {Math.ceil(localTimer)}s
+          </span>
                 </div>
             </div>
 
             <div className="media-container">
                 {question.type === 'artist' && question.previewUrl && (
                     <div className="audio-player">
-                        <audio
-                            ref={audioRef}
-                            src={question.previewUrl}
-                            controls
-                            autoPlay
-                            onError={() => setAudioError(true)}
-                        ></audio>
+                        {audioType === 'youtube_embed' ? (
+                            // YouTube embed avec UI améliorée
+                            <div className="youtube-audio-container">
+                                {audioLoading && (
+                                    <div className="audio-loading-indicator">Chargement de l'audio...</div>
+                                )}
+                                <iframe
+                                    src={question.previewUrl}
+                                    title="YouTube audio"
+                                    allow="autoplay; encrypted-media"
+                                    className="youtube-audio-iframe"
+                                    onLoad={handleYouTubeLoad}
+                                ></iframe>
+                                <div className="audio-controls">
+                                    <div className="audio-progress">
+                                        <div
+                                            className="audio-progress-bar"
+                                            style={{width: `${(localTimer / 30) * 100}%`}}
+                                        ></div>
+                                    </div>
+                                    <p className="audio-source">
+                                        {question.previewMetadata?.title ?
+                                            `${question.previewMetadata.title.substring(0, 40)}${question.previewMetadata.title.length > 40 ? '...' : ''}` :
+                                            'Lecture en cours...'}
+                                    </p>
+                                </div>
+                            </div>
+                        ) : (
+                            // Player audio standard amélioré
+                            <div className="enhanced-audio-player">
+                                {audioLoading && (
+                                    <div className="audio-loading">Chargement de l'audio...</div>
+                                )}
+
+                                <div className="audio-player-ui">
+                                    <button
+                                        className={`play-button ${audioPlaying ? 'playing' : ''}`}
+                                        onClick={toggleAudio}
+                                        disabled={audioLoading || audioError}
+                                    >
+                                        {audioPlaying ? '❚❚' : '▶'}
+                                    </button>
+
+                                    <div className="progress-container">
+                                        <div className="progress-bar">
+                                            <div
+                                                className="progress-fill"
+                                                style={{width: `${audioProgress}%`}}
+                                            ></div>
+                                        </div>
+
+                                        {question.previewMetadata?.title && (
+                                            <div className="audio-title">
+                                                {question.previewMetadata.title.substring(0, 40)}
+                                                {question.previewMetadata.title.length > 40 ? '...' : ''}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <audio
+                                    ref={audioRef}
+                                    src={question.previewUrl}
+                                    preload="auto"
+                                    className="hidden-audio"
+                                    onCanPlay={() => setAudioLoading(false)}
+                                    onError={() => {
+                                        setAudioError(true);
+                                        setAudioLoading(false);
+                                    }}
+                                ></audio>
+
+                                {audioError && (
+                                    <div className="audio-error">
+                                        <p>Problème de lecture audio.</p>
+                                        <button
+                                            onClick={retryAudio}
+                                            className="retry-audio-button"
+                                        >
+                                            Réessayer
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                         <div className="hint">
                             <p>Écoutez l'extrait et devinez l'artiste...</p>
-                            {audioError && (
-                                <div className="audio-error">
-                                    <p>Problème de lecture audio.</p>
-                                    <button
-                                        onClick={() => {
-                                            if (audioRef.current) {
-                                                audioRef.current.load();
-                                                audioRef.current.play().catch(e => console.error("Retry error:", e));
-                                            }
-                                        }}
-                                        className="retry-audio-button"
-                                    >
-                                        Réessayer
-                                    </button>
-                                </div>
-                            )}
                         </div>
                     </div>
                 )}
@@ -176,8 +319,8 @@ export default function EnhancedQuestionComponent({
                     <div className="audio-player">
                         {question.previewUrl ? (
                             <>
-                                {isYouTubeEmbed ? (
-                                    // YouTube embed with improved UI
+                                {audioType === 'youtube_embed' ? (
+                                    // YouTube embed avec UI améliorée
                                     <div className="youtube-audio-container">
                                         {audioLoading && (
                                             <div className="audio-loading-indicator">Chargement de l'audio...</div>
@@ -196,48 +339,70 @@ export default function EnhancedQuestionComponent({
                                                     style={{width: `${(localTimer / 30) * 100}%`}}
                                                 ></div>
                                             </div>
-                                            <p className="audio-source">Lecture en cours...</p>
+                                            <p className="audio-source">
+                                                {question.previewMetadata?.title ?
+                                                    `${question.previewMetadata.title.substring(0, 40)}${question.previewMetadata.title.length > 40 ? '...' : ''}` :
+                                                    'Lecture en cours...'}
+                                            </p>
                                         </div>
                                     </div>
                                 ) : (
-                                    // Regular audio element
-                                    <>
+                                    // Enhanced audio player for direct audio
+                                    <div className="enhanced-audio-player">
                                         {audioLoading && (
                                             <div className="audio-loading">Chargement de l'audio...</div>
                                         )}
+
+                                        <div className="audio-player-ui">
+                                            <button
+                                                className={`play-button ${audioPlaying ? 'playing' : ''}`}
+                                                onClick={toggleAudio}
+                                                disabled={audioLoading || audioError}
+                                            >
+                                                {audioPlaying ? '❚❚' : '▶'}
+                                            </button>
+
+                                            <div className="progress-container">
+                                                <div className="progress-bar">
+                                                    <div
+                                                        className="progress-fill"
+                                                        style={{width: `${audioProgress}%`}}
+                                                    ></div>
+                                                </div>
+
+                                                {question.previewMetadata?.title && (
+                                                    <div className="audio-title">
+                                                        {question.previewMetadata.title.substring(0, 40)}
+                                                        {question.previewMetadata.title.length > 40 ? '...' : ''}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
                                         <audio
                                             ref={audioRef}
                                             src={question.previewUrl}
-                                            controls
-                                            autoPlay
+                                            preload="auto"
+                                            className="hidden-audio"
                                             onCanPlay={() => setAudioLoading(false)}
                                             onError={() => {
                                                 setAudioError(true);
                                                 setAudioLoading(false);
                                             }}
                                         ></audio>
+
                                         {audioError && (
                                             <div className="audio-error">
                                                 <p>Problème de lecture audio.</p>
                                                 <button
-                                                    onClick={() => {
-                                                        if (audioRef.current) {
-                                                            setAudioLoading(true);
-                                                            audioRef.current.load();
-                                                            audioRef.current.play().catch(e => {
-                                                                console.error("Retry error:", e);
-                                                                setAudioError(true);
-                                                                setAudioLoading(false);
-                                                            });
-                                                        }
-                                                    }}
+                                                    onClick={retryAudio}
                                                     className="retry-audio-button"
                                                 >
                                                     Réessayer
                                                 </button>
                                             </div>
                                         )}
-                                    </>
+                                    </div>
                                 )}
                             </>
                         ) : (
@@ -245,8 +410,8 @@ export default function EnhancedQuestionComponent({
                                 Prévisualisation audio non disponible pour cette piste.
                                 <br />
                                 <span className="audio-clue">
-                                    Indice: Artiste: {question.artistName}
-                                </span>
+                  Indice: Artiste: {question.artistName}
+                </span>
                             </p>
                         )}
 
@@ -333,116 +498,92 @@ export default function EnhancedQuestionComponent({
             )}
 
             <style jsx>{`
-                /* All CSS from before remains the same */
+                /* Styles existants */
 
-                /* Audio related styles */
-                .audio-loading {
-                    padding: 0.5rem;
-                    background: rgba(0, 0, 0, 0.05);
-                    color: #333;
-                    border-radius: 4px;
-                    margin-bottom: 0.5rem;
-                    font-size: 0.875rem;
+                /* Nouveaux styles pour le lecteur audio amélioré */
+                .enhanced-audio-player {
+                    width: 100%;
+                    max-width: 400px;
+                    padding: 15px;
+                    background: #f8f9fa;
+                    border-radius: 10px;
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+                    margin-bottom: 15px;
                 }
 
-                .audio-error {
-                    color: #dc3545;
-                    font-weight: bold;
-                    margin-top: 0.5rem;
-                    padding: 0.5rem;
-                    background: rgba(220, 53, 69, 0.1);
-                    border-radius: 4px;
+                .audio-player-ui {
+                    display: flex;
+                    align-items: center;
+                    gap: 15px;
                 }
 
-                .retry-audio-button {
-                    margin-top: 0.5rem;
-                    padding: 0.25rem 0.75rem;
+                .play-button {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 50%;
                     background: #007bff;
                     color: white;
                     border: none;
-                    border-radius: 4px;
+                    font-size: 18px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
                     cursor: pointer;
-                    font-size: 0.875rem;
+                    transition: all 0.2s;
                 }
 
-                /* YouTube embed styling */
-                .youtube-audio-container {
-                    width: 100%;
-                    position: relative;
-                    overflow: hidden;
-                    height: 80px;
-                    background: #f8f9fa;
-                    border-radius: 10px;
-                    margin-bottom: 1rem;
+                .play-button:hover {
+                    background: #0069d9;
+                    transform: scale(1.05);
                 }
 
-                .youtube-audio-iframe {
-                    width: 100%;
-                    height: 300px;
-                    position: absolute;
-                    top: -120px;
-                    left: 0;
-                    opacity: 0.01; /* Nearly invisible, but still loads */
-                    pointer-events: none;
+                .play-button.playing {
+                    background: #dc3545;
                 }
 
-                .audio-loading-indicator {
-                    padding: 0.5rem;
+                .play-button:disabled {
+                    background: #6c757d;
+                    cursor: not-allowed;
+                }
+
+                .progress-container {
+                    flex-grow: 1;
+                }
+
+                .progress-bar {
+                    height: 8px;
                     background: rgba(0, 0, 0, 0.1);
-                    color: #333;
-                    font-size: 0.8rem;
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    text-align: center;
-                }
-
-                .audio-controls {
-                    position: absolute;
-                    bottom: 0;
-                    left: 0;
-                    right: 0;
-                    padding: 0.5rem;
-                    background: rgba(0, 0, 0, 0.05);
-                }
-
-                .audio-progress {
-                    height: 6px;
-                    background: rgba(0, 0, 0, 0.1);
-                    border-radius: 3px;
+                    border-radius: 4px;
                     overflow: hidden;
-                    margin-bottom: 0.25rem;
+                    margin-bottom: 8px;
                 }
 
-                .audio-progress-bar {
+                .progress-fill {
                     height: 100%;
                     background: #007bff;
-                    border-radius: 3px;
                     transition: width 0.1s linear;
                 }
 
-                .audio-source {
-                    font-size: 0.75rem;
-                    color: #666;
-                    margin: 0;
-                    text-align: center;
-                }
-
-                .audio-unavailable {
-                    padding: 1rem;
-                    background: #f8f9fa;
-                    border-radius: 8px;
-                    font-size: 0.9rem;
-                    margin-bottom: 1rem;
+                .audio-title {
+                    font-size: 12px;
                     color: #6c757d;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
                 }
 
-                .audio-clue {
-                    display: block;
-                    font-weight: bold;
-                    margin-top: 0.5rem;
-                    color: #495057;
+                .hidden-audio {
+                    display: none;
+                }
+
+                .audio-loading {
+                    text-align: center;
+                    padding: 8px;
+                    margin-bottom: 10px;
+                    font-size: 14px;
+                    color: #6c757d;
+                    background: rgba(0, 0, 0, 0.05);
+                    border-radius: 4px;
                 }
             `}</style>
         </div>

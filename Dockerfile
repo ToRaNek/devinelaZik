@@ -30,6 +30,6 @@ RUN npx prisma generate
 EXPOSE 3000
 # Healthcheck to verify the service is running
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3000/api/socket-health || exit 1
+  CMD curl -f http://192-168-37-98.nip.io:3000/api/socket-health || exit 1
 # Command to run the server with proper waiting for dependencies
 CMD ["sh", "-c", "/usr/local/bin/wait-for-it.sh postgres 5432 -- node server.js"]

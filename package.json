@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start -p 3000",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "setup-youtube": "node scripts/setup-youtube.js"
   },
   "dependencies": {
     "next": "13.5.1",
@@ -24,7 +25,11 @@
     "http-proxy": "1.18.1",
     "undici": "^7.8.0",
     "node-fetch": "^2.6.7",
-    "ytdl-core": "^4.11.2"
+    "ytdl-core": "^4.11.5",
+    "youtube-sr": "^4.3.9",
+    "play-dl": "^1.9.7",
+    "fluent-ffmpeg": "^2.1.2",
+    "audio-buffer": "^5.0.0"
   },
   "engines": {
     "node": ">=20.18.1"

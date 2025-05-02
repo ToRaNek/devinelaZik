@@ -1670,3 +1670,268 @@ body {
 .retry-audio-button:hover {
   background: #0069d9;
 }
+
+/* styles/audioPlayer.css */
+
+/* Conteneur principal du lecteur */
+.enhanced-audio-player {
+  width: 100%;
+  max-width: 400px;
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  margin: 0 auto 20px;
+  transition: all 0.3s ease;
+}
+
+.enhanced-audio-player:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+/* Interface du lecteur */
+.audio-player-ui {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* Bouton de lecture/pause */
+.play-button {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #007bff, #0056b3);
+  color: white;
+  border: none;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 5px rgba(0, 0, 123, 0.2);
+}
+
+.play-button:hover {
+  background: linear-gradient(135deg, #0069d9, #004494);
+  transform: scale(1.05);
+}
+
+.play-button:active {
+  transform: scale(0.95);
+}
+
+.play-button.playing {
+  background: linear-gradient(135deg, #dc3545, #b02a37);
+}
+
+.play-button:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.7;
+  box-shadow: none;
+}
+
+/* Conteneur de la barre de progression */
+.progress-container {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Barre de progression */
+.progress-bar {
+  height: 8px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+  position: relative;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #007bff, #0d6efd);
+  border-radius: 4px;
+  transition: width 0.15s linear;
+}
+
+.progress-bar:hover .progress-fill {
+  background: linear-gradient(90deg, #0069d9, #0b5ed7);
+}
+
+/* Titre de l'audio */
+.audio-title {
+  font-size: 12px;
+  color: #6c757d;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+
+/* Audio élément caché */
+.hidden-audio {
+  display: none;
+}
+
+/* États de chargement */
+.audio-loading {
+  text-align: center;
+  padding: 10px;
+  margin-bottom: 12px;
+  font-size: 14px;
+  color: #6c757d;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 6px;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+/* Message d'erreur */
+.audio-error {
+  background: rgba(220, 53, 69, 0.1);
+  border-left: 3px solid #dc3545;
+  padding: 10px 15px;
+  margin-top: 15px;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #dc3545;
+}
+
+.audio-error p {
+  margin: 0 0 8px 0;
+}
+
+/* Bouton de reprise */
+.retry-audio-button {
+  background: #dc3545;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.retry-audio-button:hover {
+  background: #bb2d3b;
+}
+
+/* Conteneur YouTube */
+.youtube-audio-container {
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+  height: 90px;
+  background: #f8f9fa;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  margin-bottom: 20px;
+  transition: all 0.3s ease;
+}
+
+.youtube-audio-container:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+}
+
+.youtube-audio-iframe {
+  width: 100%;
+  height: 315px;
+  position: absolute;
+  top: -120px;
+  left: 0;
+  opacity: 0.1;
+  pointer-events: none;
+}
+
+.audio-loading-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.1);
+  color: #333;
+  font-size: 13px;
+  text-align: center;
+  z-index: 1;
+}
+
+.audio-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 15px;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.audio-progress {
+  height: 8px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.audio-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #007bff, #0d6efd);
+  border-radius: 4px;
+  transition: width 0.2s linear;
+}
+
+.audio-source {
+  font-size: 12px;
+  color: #6c757d;
+  margin: 0;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Message quand l'audio n'est pas disponible */
+.audio-unavailable {
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: 12px;
+  border-left: 4px solid #ffc107;
+  font-size: 14px;
+  margin-bottom: 20px;
+  color: #6c757d;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.audio-clue {
+  display: block;
+  margin-top: 10px;
+  font-weight: 600;
+  color: #495057;
+}
+
+/* Styles responsifs */
+@media (max-width: 768px) {
+  .enhanced-audio-player {
+    padding: 12px;
+  }
+
+  .play-button {
+    width: 36px;
+    height: 36px;
+    font-size: 14px;
+  }
+
+  .audio-title, .audio-source {
+    font-size: 11px;
+  }
+}
