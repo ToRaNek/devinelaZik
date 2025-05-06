@@ -27,6 +27,7 @@ export default async function handler(req, res) {
         path: '/socket.io', // Uniformisé avec la configuration client
         addTrailingSlash: false,
         transports: ['websocket', 'polling'],
+        forcePolling: true,
         cors: {
             origin: process.env.NEXTAUTH_URL || "http://192-168-37-98.nip.io:3000",
             methods: ["GET", "POST"],

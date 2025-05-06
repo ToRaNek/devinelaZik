@@ -376,6 +376,7 @@ app.prepare().then(() => {
     path: '/socket.io',
     // Utiliser polling en premier pour plus de fiabilité
     transports: ['polling', 'websocket'],
+    forcePolling: true,
     cors: {
       origin: "*",
       methods: ["GET", "POST"],
