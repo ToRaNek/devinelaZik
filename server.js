@@ -620,15 +620,47 @@ app.prepare().then(() => {
                 console.log(`Got ${playlists.length} playlists from ${player.user.pseudo}`);
 
                 // Get tracks from player's playlists (limit to 3 playlists for performance)
-                for (const playlist of playlists.slice(0, 3)) {
-                  try {
-                    const tracks = await getPlaylistTracks(playlist.id, player.userId);
-                    if (tracks && tracks.length > 0) {
-                      playerData.tracks.push(...tracks);
-                      console.log(`Got ${tracks.length} tracks from playlist "${playlist.name}"`);
+                const musicPreferences = await prisma.userMusicPreference.findUnique({
+                  where: { userId: player.userId }
+                });
+
+// Vérifier si l'utilisateur a des préférences de playlist
+                if (musicPreferences && musicPreferences.playlistIds && musicPreferences.playlistIds.length > 0) {
+                  console.log(`Chargement des ${musicPreferences.playlistIds.length} playlists sélectionnées`);
+
+                  // Ne charger que les playlists sélectionnées
+                  for (const playlistId of musicPreferences.playlistIds) {
+                    try {
+                      // Trouver le nom de la playlist pour le logging
+                      const playlistName = playlists.find(p => p.id === playlistId)?.name || playlistId;
+                      console.log(`Chargement de la playlist sélectionnée: ${playlistName}`);
+
+                      const playlistTracks = await getPlaylistTracks(playlistId, player.userId);
+                      if (playlistTracks && playlistTracks.length > 0) {
+                        playerData.tracks.push(...playlistTracks);
+                        console.log(`Ajout de ${playlistTracks.length} titres depuis la playlist "${playlistName}"`);
+                      }
+                    } catch (err) {
+                      console.error(`Erreur lors du chargement des titres de la playlist ${playlistId}:`, err.message);
                     }
-                  } catch (err) {
-                    console.error(`Error getting playlist tracks for ${playlist.id}:`, err.message);
+                  }
+                } else {
+                  // Si aucune playlist n'est sélectionnée, utiliser les playlists par défaut
+                  console.log(`Aucune playlist sélectionnée pour l'utilisateur ${player.userId}, utilisation des playlists par défaut`);
+
+                  // Limiter à 2-3 playlists par défaut pour éviter de surcharger
+                  const defaultPlaylists = playlists.slice(0, 3);
+
+                  for (const playlist of defaultPlaylists) {
+                    try {
+                      const playlistTracks = await getPlaylistTracks(playlist.id, player.userId);
+                      if (playlistTracks && playlistTracks.length > 0) {
+                        playerData.tracks.push(...playlistTracks);
+                        console.log(`Ajout de ${playlistTracks.length} titres depuis la playlist par défaut "${playlist.name}"`);
+                      }
+                    } catch (err) {
+                      console.error(`Erreur lors du chargement des titres de la playlist ${playlist.id}:`, err.message);
+                    }
                   }
                 }
               } catch (e) {

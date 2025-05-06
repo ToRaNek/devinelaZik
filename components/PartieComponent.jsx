@@ -438,8 +438,8 @@ export default function PartieComponent({ roomCode }) {
       roomCode,
       rounds: settings.rounds || 10,
       quizType: settings.quizType || 'multiple_choice',
-      // Envoyer tous les services disponibles au lieu d'un seul
-      source: 'all'  // Utiliser toutes les sources disponibles
+      source: settings.source || 'all',  // Utiliser la source sélectionnée
+      selectedPlaylists: settings.selectedPlaylists || []  // Passer les playlists sélectionnées
     });
   };
 

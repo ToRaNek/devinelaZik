@@ -1,10 +1,11 @@
 // components/GameSettingsComponent.jsx
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
-export default function GameSettingsComponent({ onStartGame, isHost, hideSourceSelection = true }) {
+export default function GameSettingsComponent({ onStartGame, isHost, hideSourceSelection = false }) {
     const [rounds, setRounds] = useState(10);
     const [quizType, setQuizType] = useState('multiple_choice');
     const [musicSource, setMusicSource] = useState('all'); // Par défaut, utiliser toutes les sources
+    const [selectedPlaylists, setSelectedPlaylists] = useState([]); // Ajout de la définition manquante
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const handleStartGame = () => {
@@ -71,22 +72,26 @@ export default function GameSettingsComponent({ onStartGame, isHost, hideSourceS
                 )}
             </div>
 
-            {/* La section de sélection de source est masquée par défaut */}
-            {!hideSourceSelection && (
-                <div className="settings-group">
-                    <label htmlFor="musicSource">Source des questions:</label>
-                    <select
-                        id="musicSource"
-                        value={musicSource}
-                        onChange={(e) => setMusicSource(e.target.value)}
-                        className="settings-select"
-                    >
-                        <option value="all">Toutes les sources disponibles</option>
-                        <option value="spotify">Spotify uniquement</option>
-                        <option value="deezer" disabled>Deezer (Bientôt disponible)</option>
-                    </select>
+            {/* La section de sélection de source est maintenant visible par défaut */}
+            <div className="settings-group">
+                <label htmlFor="musicSource">Source des questions:</label>
+                <select
+                    id="musicSource"
+                    value={musicSource}
+                    onChange={(e) => setMusicSource(e.target.value)}
+                    className="settings-select"
+                >
+                    <option value="all">Toutes les sources disponibles</option>
+                    <option value="top">Titres les plus écoutés</option>
+                    <option value="saved">Titres likés</option>
+                    <option value="recent">Historique d'écoute récent</option>
+                    <option value="playlists">Playlists sélectionnées</option>
+                </select>
+
+                <div className="settings-help">
+                    Choisissez la source des questions pour personnaliser votre expérience de jeu.
                 </div>
-            )}
+            </div>
 
             <button
                 onClick={handleStartGame}
@@ -95,50 +100,6 @@ export default function GameSettingsComponent({ onStartGame, isHost, hideSourceS
             >
                 {isSubmitting ? 'Préparation...' : 'Commencer la partie'}
             </button>
-
-            <style jsx>{`
-                .game-settings {
-                    background: white;
-                    border-radius: 8px;
-                    padding: 1.5rem;
-                    margin-top: 1.5rem;
-                    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-                }
-
-                .settings-group {
-                    margin-bottom: 1.5rem;
-                }
-
-                .settings-group label {
-                    display: block;
-                    margin-bottom: 0.5rem;
-                    font-weight: 500;
-                }
-
-                .settings-select {
-                    width: 100%;
-                    padding: 0.75rem;
-                    border: 1px solid #dee2e6;
-                    border-radius: 4px;
-                    background-color: white;
-                    font-size: 1rem;
-                }
-
-                .settings-help {
-                    margin-top: 0.5rem;
-                    font-size: 0.875rem;
-                    color: #6c757d;
-                    background: #f8f9fa;
-                    padding: 0.75rem;
-                    border-radius: 4px;
-                    border-left: 3px solid #007bff;
-                }
-
-                .start-game-btn {
-                    width: 100%;
-                    padding: 0.75rem;
-                }
-            `}</style>
         </div>
     );
 }
