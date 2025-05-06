@@ -26,6 +26,7 @@ const activeRooms = new Map();
 const activeGames = new Map();
 const activeConnections = new Map();
 
+
 // Fonction utilitaire pour mélanger un tableau
 function shuffleArray(array) {
   const shuffled = [...array];
@@ -529,6 +530,11 @@ app.prepare().then(() => {
 
     socket.on('startGame', async (data) => {
       try {
+        const count    = data.rounds   || 10;
+        const quizType = data.quizType || 'multiple_choice';
+        const source   = data.source   || 'all';
+        const selectedPlaylists = data.selectedPlaylists  || [];
+
         console.log(`Démarrage de partie demandé dans la salle ${data.roomCode} par ${socket.userId}`);
         const roomData = activeRooms.get(data.roomCode);
 
@@ -586,21 +592,27 @@ app.prepare().then(() => {
                 console.error(`Failed to get top tracks for ${player.user.pseudo}:`, e.message);
               }
 
-              try {
-                const savedTracks = await getUserSavedTracks(player.userId) || [];
-                playerData.tracks.push(...savedTracks);
-                console.log(`Got ${savedTracks.length} saved tracks from ${player.user.pseudo}`);
-              } catch (e) {
-                console.error(`Failed to get saved tracks for ${player.user.pseudo}:`, e.message);
+              let playerTracks = [];
+              if (source === 'top') {
+                playerTracks = await getUserTopTracks(player.userId);
+              } else if (source === 'saved') {
+                playerTracks = await getUserSavedTracks(player.userId);
+              } else if (source === 'recent') {
+                playerTracks = await getRecentlyPlayedTracks(player.userId);
+              } else if (source === 'playlists'){
+                for (const plId of selectedPlaylists) {
+                  const tracks = await getPlaylistTracks(plId);
+                  playerTracks.push(...tracks);
+                }
+              }else {
+                // all = on mélange tout
+                playerTracks = [
+                    ...(await getUserTopTracks(player.userId)),
+                  ...(await getUserSavedTracks(player.userId)),
+                  ...(await getRecentlyPlayedTracks(player.userId))
+                ];
               }
-
-              try {
-                const recentTracks = await getRecentlyPlayedTracks(player.userId) || [];
-                playerData.tracks.push(...recentTracks);
-                console.log(`Got ${recentTracks.length} recent tracks from ${player.user.pseudo}`);
-              } catch (e) {
-                console.error(`Failed to get recent tracks for ${player.user.pseudo}:`, e.message);
-              }
+              playerData.tracks.push(...playerTracks);
 
               // Get playlists from this player
               try {
@@ -1159,63 +1171,135 @@ app.prepare().then(() => {
 // Helper function to collect music data from a single player
     async function collectPlayerMusicData(userId) {
       try {
-        // Use existing functions to get Spotify data
+        // Récupérer les préférences musicales de l'utilisateur
+        const musicPreferences = await prisma.userMusicPreference.findUnique({
+          where: { userId }
+        });
+
+        // Valeurs par défaut si aucune préférence n'est trouvée
+        const preferences = musicPreferences || {
+          playlistIds: [],
+          useLikedTracks: true,
+          useListeningHistory: true
+        };
+
         const tracks = [];
         const artists = [];
         const albums = [];
 
-        // Get tracks from various sources
+        // 1. Récupérer les titres préférés (toujours inclus)
         try {
-          // Top tracks - short term
           const topTracks = await getUserTopTracks(userId, 'short_term', 30);
           if (topTracks && topTracks.length > 0) {
             tracks.push(...topTracks);
+            console.log(`Got ${topTracks.length} top tracks for user ${userId}`);
           }
+        } catch (e) {
+          console.error(`Failed to get top tracks for user ${userId}:`, e.message);
+        }
 
-          // Saved tracks
-          const savedTracks = await getUserSavedTracks(userId, 30);
-          if (savedTracks && savedTracks.length > 0) {
-            // Filter out duplicates
-            const uniqueTracks = savedTracks.filter(
-                track => !tracks.some(t => t.id === track.id)
-            );
-            tracks.push(...uniqueTracks);
+        // 2. Récupérer les titres likés (si activé, par défaut true)
+        if (preferences.useLikedTracks) {
+          try {
+            const savedTracks = await getUserSavedTracks(userId, 50);
+            if (savedTracks && savedTracks.length > 0) {
+              // Filtrer les doublons
+              const uniqueTracks = savedTracks.filter(
+                  track => !tracks.some(t => t.id === track.id)
+              );
+              tracks.push(...uniqueTracks);
+              console.log(`Got ${uniqueTracks.length} unique liked tracks for user ${userId}`);
+            }
+          } catch (e) {
+            console.error(`Failed to get liked tracks for user ${userId}:`, e.message);
           }
+        }
 
-          // Recently played
-          const recentTracks = await getRecentlyPlayedTracks(userId, 20);
-          if (recentTracks && recentTracks.length > 0) {
-            // Filter out duplicates
-            const uniqueTracks = recentTracks.filter(
-                track => !tracks.some(t => t.id === track.id)
-            );
-            tracks.push(...uniqueTracks);
+        // 3. Récupérer l'historique d'écoute (si activé)
+        if (preferences.useListeningHistory) {
+          try {
+            const recentTracks = await getRecentlyPlayedTracks(userId, 30);
+            if (recentTracks && recentTracks.length > 0) {
+              // Filtrer les doublons
+              const uniqueTracks = recentTracks.filter(
+                  track => !tracks.some(t => t.id === track.id)
+              );
+              tracks.push(...uniqueTracks);
+              console.log(`Got ${uniqueTracks.length} unique recent tracks for user ${userId}`);
+            }
+          } catch (e) {
+            console.error(`Failed to get recent tracks for user ${userId}:`, e.message);
           }
+        }
 
-          // Top artists
-          const topArtists = await getUserTopArtists(userId, 'medium_term', 20);
+        // 4. Récupérer les playlists sélectionnées
+        if (preferences.playlistIds && preferences.playlistIds.length > 0) {
+          console.log(`Fetching ${preferences.playlistIds.length} selected playlists for user ${userId}`);
+
+          for (const playlistId of preferences.playlistIds) {
+            try {
+              const playlistTracks = await getPlaylistTracks(playlistId, userId, 50);
+              if (playlistTracks && playlistTracks.length > 0) {
+                // Filtrer les doublons
+                const uniqueTracks = playlistTracks.filter(
+                    track => !tracks.some(t => t.id === track.id)
+                );
+                tracks.push(...uniqueTracks);
+                console.log(`Added ${uniqueTracks.length} unique tracks from playlist ${playlistId}`);
+              }
+            } catch (e) {
+              console.error(`Failed to get tracks from playlist ${playlistId}:`, e.message);
+            }
+          }
+        } else if (preferences.playlistIds && preferences.playlistIds.length === 0) {
+          console.log(`No playlists selected for user ${userId}`);
+        } else {
+          // Si aucune préférence n'est définie, récupérer quelques playlists par défaut
+          try {
+            const playlists = await getUserPlaylists(userId, 3);
+            console.log(`No playlist preferences found, using top ${playlists.length} playlists as default`);
+
+            for (const playlist of playlists) {
+              try {
+                const playlistTracks = await getPlaylistTracks(playlist.id, userId, 30);
+                if (playlistTracks && playlistTracks.length > 0) {
+                  const uniqueTracks = playlistTracks.filter(
+                      track => !tracks.some(t => t.id === track.id)
+                  );
+                  tracks.push(...uniqueTracks);
+                  console.log(`Added ${uniqueTracks.length} tracks from default playlist ${playlist.name}`);
+                }
+              } catch (err) {
+                console.error(`Error getting tracks from playlist ${playlist.id}:`, err.message);
+              }
+            }
+          } catch (e) {
+            console.error(`Failed to get default playlists for user ${userId}:`, e.message);
+          }
+        }
+
+        // 5. Récupérer les artistes et extraire les albums
+        try {
+          const topArtists = await getUserTopArtists(userId);
           if (topArtists && topArtists.length > 0) {
             artists.push(...topArtists);
           }
 
-          // Extract albums from tracks
+          // Extraire les albums des pistes
           const trackAlbums = tracks
               .map(track => track.album)
               .filter((album, index, self) =>
-                  album && index === self.findIndex(a => a.id === album.id)
+                  album && index === self.findIndex(a => a && a.id === album.id)
               );
 
-          if (trackAlbums.length > 0) {
-            albums.push(...trackAlbums);
-          }
-
-        } catch (error) {
-          console.error(`Error collecting music data for user ${userId}:`, error);
+          albums.push(...trackAlbums);
+        } catch (e) {
+          console.error(`Failed to process artists/albums for user ${userId}:`, e.message);
         }
 
         return { tracks, artists, albums };
       } catch (error) {
-        console.error(`Failed to collect music data for user ${userId}:`, error);
+        console.error(`Error in collectPlayerMusicData for user ${userId}:`, error);
         return { tracks: [], artists: [], albums: [] };
       }
     }

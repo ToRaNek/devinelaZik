@@ -19,6 +19,7 @@ model User {
   players       RoomPlayer[]
   accounts      Account[]
   sessions      Session[]
+  musicPreferences UserMusicPreference?
 }
 
 model Room {
@@ -70,4 +71,16 @@ model VerificationToken {
   token      String   @unique
   expires    DateTime
   @@unique([identifier, token])
+}
+
+model UserMusicPreference {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playlistIds   String[] // Liste des IDs de playlists autorisées
+  playlistNames String[] // Noms des playlists pour l'affichage
+  useLikedTracks Boolean @default(true) // Toujours inclure les titres likés
+  useListeningHistory Boolean @default(true) // Inclure l'historique d'écoute
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }

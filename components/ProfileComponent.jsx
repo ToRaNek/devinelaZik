@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { signIn, useSession } from 'next-auth/react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import PlaylistSelectionComponent from './PlaylistSelectionComponent';
 
 export default function ProfileComponent() {
     const { data: session, status } = useSession();
@@ -262,6 +263,9 @@ export default function ProfileComponent() {
                     </div>
                 </div>
             </div>
+            {(session?.user?.spotify) && (
+                <PlaylistSelectionComponent />
+            )}
 
             <div className="profile-actions">
                 <Link href="/lobby" className="btn-primary">

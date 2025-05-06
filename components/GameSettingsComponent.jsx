@@ -12,7 +12,8 @@ export default function GameSettingsComponent({ onStartGame, isHost, hideSourceS
         onStartGame({
             rounds,
             quizType,
-            source: musicSource
+            source: musicSource,
+            selectedPlaylists
         });
     };
 
