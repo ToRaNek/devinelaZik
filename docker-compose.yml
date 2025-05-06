@@ -37,9 +37,12 @@ services:
 
   next_app:
     build: .
+    volumes:
+      - ./cache:/app/host-cache
     ports:
       - "3000:3000"
     environment:
+      HOST_CACHE_DIR: "/app/host-cache"
       DATABASE_URL: "postgresql://example:example@postgres:5432/devinelazik"
       NEXTAUTH_URL: ${NEXTAUTH_URL}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
