@@ -1673,7 +1673,7 @@ app.prepare().then(() => {
     return handle(req, res);
   });
 
-  const { commitCache } = require('/script/commit-cache');
+  const { commitCache } = require('./script/commit-cache');
 
 // Set up periodic cache commits
   const COMMIT_INTERVAL_MINUTES = 15;
