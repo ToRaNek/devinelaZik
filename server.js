@@ -1676,7 +1676,7 @@ app.prepare().then(() => {
 
   const PORT = parseInt(process.env.PORT, 10) || 10000;
   // Démarrage du serveur
-  httpServer.listen('0.0.0.0', (err) => {
+  httpServer.listen(PORT, '0.0.0.0', (err) => {
     if (err) throw err;
     console.log(`> Ready on https://devinela-zik-wait-for-it.onrender.com`);
     console.log('> Socket.IO server initialized');
