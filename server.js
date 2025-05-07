@@ -1672,10 +1672,9 @@ app.prepare().then(() => {
   server.all('*', (req, res) => {
     return handle(req, res);
   });
-
-  const PORT = process.env.PORT || 4000;
+  
   // Démarrage du serveur
-  httpServer.listen(PORT, '0.0.0.0', (err) => {
+  httpServer.listen('0.0.0.0', (err) => {
     if (err) throw err;
     console.log(`> Ready on https://devinela-zik-wait-for-it.onrender.com`);
     console.log('> Socket.IO server initialized');
