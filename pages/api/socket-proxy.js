@@ -23,8 +23,8 @@ export default function handler(req, res) {
 
         // Configurer le proxy vers le serveur Socket.IO
         const target = process.env.NODE_ENV === 'production'
-            ? 'http://192-168-37-98.nip.io:3000'
-            : 'http://192-168-37-98.nip.io:3000';
+            ? 'https://vercel-project-toraneks-projects.vercel.app'
+            : 'https://vercel-project-toraneks-projects.vercel.app';
 
         // Options de proxy plus détaillées
         const options = {

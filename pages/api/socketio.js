@@ -29,7 +29,7 @@ export default async function handler(req, res) {
         transports: ['websocket', 'polling'],
         forcePolling: true,
         cors: {
-            origin: process.env.NEXTAUTH_URL || "http://192-168-37-98.nip.io:3000",
+            origin: process.env.NEXTAUTH_URL || "https://vercel-project-toraneks-projects.vercel.app",
             methods: ["GET", "POST"],
             credentials: true
         },

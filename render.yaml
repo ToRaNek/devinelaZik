@@ -1,0 +1,37 @@
+# Blueprint file for Render.com deployment (Free Tier Configuration)
+# Filename: render.yaml
+
+services:
+  - type: web
+    name: devinela-zik-wait-for-it
+    env: docker
+    region: frankfurt
+    plan: free  # Free plan selected
+    autoDeploy: true
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/socket-health
+    envVars:
+      - key: NEXTAUTH_URL
+        value: https://devinela-zik-wait-for-it.onrender.com
+      - key: NEXTAUTH_SECRET
+        value: 4e69514ee74f19a0390f6016f7bec2e72f9ea78f7febe37d709fa553624ca23cbf4ccce53f243ade52317bab32f76d5d
+      - key: GOOGLE_CLIENT_ID
+        value: "91989965735-4ef5ctimj0ljo3qeb9b54itrmq81qmpb.apps.googleusercontent.com"
+      - key: GOOGLE_CLIENT_SECRET
+        value: "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"
+      - key: YOUTUBE_API_KEY
+        value: "AIzaSyD6MRcqv3qXrlAp0ttAODjwLTBDUHzfHwI"
+      - key: DISCORD_CLIENT_ID
+        value: "1366165044915601568"
+      - key: DISCORD_CLIENT_SECRET
+        value: "tp7Mu-ZcuiFn0NZt4OcH8v8tA4K-_uKo"
+      - key: SPOTIFY_CLIENT_ID
+        value: "7f90e0456bd34a3098599863b638105e"
+      - key: SPOTIFY_CLIENT_SECRET
+        value: "8d8a7d078e684dd2b116c64842100a30"
+      - key: SOCKET_IO_PATH
+        value: "/socket.io"
+      - key: SOCKET_IO_ENABLED
+        value: "true"
+      - key: DATABASE_URL
+        value: "postgresql://postgres.jkdywcrnfdikvwdowffz:QCpVxQp2MRVX0o2X@aws-0-us-east-2.pooler.supabase.com:6543/postgres"

@@ -1674,10 +1674,9 @@ app.prepare().then(() => {
   });
 
   // Démarrage du serveur
-  const PORT = process.env.PORT || 3000;
   httpServer.listen(PORT, '0.0.0.0', (err) => {
     if (err) throw err;
-    console.log(`> Ready on http://192-168-37-98.nip.io:${PORT}`);
+    console.log(`> Ready on https://vercel-project-toraneks-projects.vercel.app`);
     console.log('> Socket.IO server initialized');
   });
 });

@@ -15,7 +15,7 @@ export default async function handler(req, res) {
             enabled: true,
             path: '/socket.io',
             transports: ['websocket', 'polling'],
-            origin: process.env.NEXTAUTH_URL || 'http://192-168-37-98.nip.io:3000'
+            origin: process.env.NEXTAUTH_URL || 'https://vercel-project-toraneks-projects.vercel.app'
         },
         note: "Socket.IO fonctionne via le serveur principal, pas via les API routes."
     });
