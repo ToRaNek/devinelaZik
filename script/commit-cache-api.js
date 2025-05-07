@@ -1,6 +1,5 @@
 // scripts/commit-cache-api.js
 const fs = require('fs');
-const path = require('path');
 const { Octokit } = require('@octokit/rest');
 
 // Configuration
@@ -17,12 +16,11 @@ const CACHE_FILES = [
     }
 ];
 
-const COMMIT_INTERVAL_MINUTES = 15; // Commit every 30 minutes
-
 // GitHub repository details
-const GITHUB_OWNER = 'ToRaNek'; // GitHub username
-const GITHUB_REPO = 'devinelaZik_waitforit'; // Your repository name
+const GITHUB_OWNER = 'ToRaNek';
+const GITHUB_REPO = 'devinelaZik_waitforit';
 
+// The updateCacheFiles function - this needs to be properly exported
 async function updateCacheFiles() {
     try {
         const timestamp = new Date().toISOString();
@@ -36,6 +34,19 @@ async function updateCacheFiles() {
         }
 
         const octokit = new Octokit({ auth: token });
+
+        // Verify repository exists before proceeding
+        try {
+            await octokit.repos.get({
+                owner: GITHUB_OWNER,
+                repo: GITHUB_REPO
+            });
+            console.log(`Repository ${GITHUB_OWNER}/${GITHUB_REPO} confirmed to exist`);
+        } catch (repoError) {
+            console.error(`Repository not found or access denied: ${repoError.message}`);
+            console.log('Please ensure the repository exists and your token has correct access');
+            return;
+        }
 
         // Process each file
         for (const cacheFile of CACHE_FILES) {
@@ -80,7 +91,7 @@ async function updateCacheFiles() {
                 const commitMessage = `Auto-update ${cacheFile.description} - ${timestamp}`;
                 const content = Buffer.from(fileContent).toString('base64');
 
-                const updateResponse = await octokit.repos.createOrUpdateFileContents({
+                await octokit.repos.createOrUpdateFileContents({
                     owner: GITHUB_OWNER,
                     repo: GITHUB_REPO,
                     path: cacheFile.repoPath,
@@ -102,8 +113,7 @@ async function updateCacheFiles() {
     }
 }
 
-// For testing: Run the function once immediately
-updateCacheFiles();
-
-// Export for use in scheduler
-module.exports = { updateCacheFiles };
+// Make sure we explicitly export the function
+module.exports = {
+    updateCacheFiles: updateCacheFiles
+};

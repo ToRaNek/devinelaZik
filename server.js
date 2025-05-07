@@ -1673,17 +1673,31 @@ app.prepare().then(() => {
     return handle(req, res);
   });
 
-  const { updateCacheFile } = require('./script/commit-cache-api');
+  // Add cache file automatic updates
+  try {
+    const cacheUpdater = require('./script/commit-cache-api');
 
-// Set up periodic cache updates every 30 minutes
-  const COMMIT_INTERVAL_MINUTES = 15;
-  const COMMIT_INTERVAL_MS = COMMIT_INTERVAL_MINUTES * 60 * 1000;
+    // Make sure the function exists before setting up intervals
+    if (typeof cacheUpdater.updateCacheFiles === 'function') {
+      // Set up periodic cache updates every 30 minutes
+      const COMMIT_INTERVAL_MINUTES = 30;
+      const COMMIT_INTERVAL_MS = COMMIT_INTERVAL_MINUTES * 60 * 1000;
 
-  console.log(`Setting up automatic cache updates every ${COMMIT_INTERVAL_MINUTES} minutes`);
-  setInterval(updateCacheFile, COMMIT_INTERVAL_MS);
+      console.log(`Setting up automatic cache updates every ${COMMIT_INTERVAL_MINUTES} minutes`);
+      setInterval(cacheUpdater.updateCacheFiles, COMMIT_INTERVAL_MS);
 
-// Do an initial update after 5 minutes of application startup
-  setTimeout(updateCacheFile, 5 * 60 * 1000);
+      // Do an initial update after 5 minutes of application startup
+      setTimeout(cacheUpdater.updateCacheFiles, 5 * 60 * 1000);
+
+      // Run once immediately for testing
+      cacheUpdater.updateCacheFiles();
+    } else {
+      console.error('updateCacheFiles function not found in the module');
+    }
+  } catch (error) {
+    console.error('Failed to initialize cache updater:', error.message);
+    // Continue server startup even if cache updater fails
+  }
 
   const PORT = parseInt(process.env.PORT, 10) || 10000;
   // Démarrage du serveur
