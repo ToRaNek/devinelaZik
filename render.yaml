@@ -38,4 +38,4 @@ services:
       - key: DIRECT_URL
         value: "postgresql://postgres.jkdywcrnfdikvwdowffz:QCpVxQp2MRVX0o2X@aws-0-us-east-2.pooler.supabase.com:5432/postgres"
       - key : GIT_AUTH_TOKEN
-        value: "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"
+        value: "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"
