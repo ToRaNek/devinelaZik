@@ -35,8 +35,8 @@ function commitCache() {
         }
 
         // Check file size to make sure it's not empty
-        const stats = fs.statSync(CACHE_CSV_PATH);
-        if (stats.size === 0) {
+        const statscsv = fs.statSync(CACHE_CSV_PATH);
+        if (statscsv.size === 0) {
             console.log('Cache file is empty, skipping commit');
             return;
         }
