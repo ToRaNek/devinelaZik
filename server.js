@@ -1672,7 +1672,9 @@ app.prepare().then(() => {
   server.all('*', (req, res) => {
     return handle(req, res);
   });
-  
+
+
+  const PORT = parseInt(process.env.PORT, 10) || 10000;
   // Démarrage du serveur
   httpServer.listen('0.0.0.0', (err) => {
     if (err) throw err;

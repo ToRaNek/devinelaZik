@@ -39,7 +39,7 @@ ENV DIRECT_URL="postgresql://postgres.jkdywcrnfdikvwdowffz:QCpVxQp2MRVX0o2X@aws-
 RUN npx prisma generate
 
 # 4. Exposer le port et healthcheck
-EXPOSE 3000
+EXPOSE 10000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:3000/api/socket-health || exit 1
 
