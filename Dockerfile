@@ -46,4 +46,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # 5. Démarrage en prod sur Render
 #    Render expose automatiquement votre app sur
 #    https://devinela-zik-wait-for-it.onrender.com
-CMD ["npm", "node server.js"]
+CMD ["sh", "-c", "node server.js"]
