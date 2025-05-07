@@ -1,40 +1,4 @@
 services:
-  postgres:
-    image: postgres:14-alpine
-    restart: always
-    environment:
-      POSTGRES_USER: example
-      POSTGRES_PASSWORD: example
-      POSTGRES_DB: devinelazik
-    volumes:
-      - db_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U example -d devinelazik"]
-      interval: 5s
-      retries: 5
-    networks:
-      - app-network
-
-  db_init:
-    build: .
-    environment:
-      DATABASE_URL: "postgresql://example:example@postgres:5432/devinelazik"
-    command: >
-      sh -c "
-        echo 'Waiting for postgres...' &&
-        until nc -z postgres 5432; do
-          echo 'Waiting for postgres...'
-          sleep 1
-        done &&
-        echo 'Postgres is up - creating database schema' &&
-        npx prisma db push --force-reset
-      "
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - app-network
-
   next_app:
     build: .
     volumes:
@@ -43,7 +7,8 @@ services:
       - "3000:3000"
     environment:
       HOST_CACHE_DIR: "/app/host-cache"
-      DATABASE_URL: "postgresql://example:example@postgres:5432/devinelazik"
+      DATABASE_URL: "postgresql://postgres.jkdywcrnfdikvwdowffz:QCpVxQp2MRVX0o2X@aws-0-us-east-2.pooler.supabase.com:6543/postgres?pgbouncer=true"
+      DIRECT_URL: "postgresql://postgres.jkdywcrnfdikvwdowffz:QCpVxQp2MRVX0o2X@aws-0-us-east-2.pooler.supabase.com:5432/postgres"
       NEXTAUTH_URL: ${NEXTAUTH_URL}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
@@ -52,23 +17,17 @@ services:
       DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET}
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
-      SOCKET_IO_ENABLED: "true"  # Ajouté pour activer Socket.IO explicitement
-      SOCKET_IO_PATH: "/socket.io"  # Chemin explicite pour Socket.IO
-      HOSTNAME: "0.0.0.0"  # Écouter sur toutes les interfaces
-    depends_on:
-      db_init:
-        condition: service_completed_successfully
+      SOCKET_IO_ENABLED: "true"
+      SOCKET_IO_PATH: "/socket.io"
+      HOSTNAME: "https://devinela-zik-wait-for-it.onrender.com"
     networks:
       - app-network
-    # Configuration des limites de ressources
     deploy:
       resources:
         limits:
           cpus: '1.0'
           memory: 1G
-    # Redémarrage en cas d'échec
     restart: always
-    # Configuration de la santé
     healthcheck:
       test: ["CMD", "curl", "-f", "http://0.0.0.0:3000/api/socket-health"]
       interval: 30s
@@ -78,6 +37,3 @@ services:
 networks:
   app-network:
     driver: bridge
-
-volumes:
-  db_data:
