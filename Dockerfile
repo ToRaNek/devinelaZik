@@ -4,8 +4,7 @@ WORKDIR /app
 
 # 1. Copier package.json et package-lock.json
 #    Puis installer les dépendances
-COPY package.json package-lock.json* ./
-RUN npm install
+COPY package.json ./
 
 # 2. Copier le schéma Prisma et générer le client
 RUN mkdir -p prisma
