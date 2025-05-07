@@ -1673,7 +1673,7 @@ app.prepare().then(() => {
     return handle(req, res);
   });
 
-  const { updateCacheFile } = require('./scripts/commit-cache');
+  const { updateCacheFile } = require('./script/commit-cache-api');
 
 // Set up periodic cache updates every 30 minutes
   const COMMIT_INTERVAL_MINUTES = 15;
