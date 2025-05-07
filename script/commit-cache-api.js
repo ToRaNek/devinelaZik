@@ -18,7 +18,7 @@ const CACHE_FILES = [
 
 // GitHub repository details
 const GITHUB_OWNER = 'ToRaNek';
-const GITHUB_REPO = 'devinelaZik_waitforit';
+const GITHUB_REPO = 'devinelaZik';
 
 // The updateCacheFiles function - this needs to be properly exported
 async function updateCacheFiles() {
