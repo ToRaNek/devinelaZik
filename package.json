@@ -30,7 +30,8 @@
     "fluent-ffmpeg": "^2.1.2",
     "audio-buffer": "^5.0.0",
     "csv-writer": "^1.6.0",
-    "csv-parse": "^5.3.5"
+    "csv-parse": "^5.3.5",
+    "@octokit/rest": "^21.1.1"
   },
   "engines": {
     "node": ">=20.18.1"
