@@ -1673,6 +1673,7 @@ app.prepare().then(() => {
     return handle(req, res);
   });
 
+  const PORT = process.env.PORT || 4000;
   // Démarrage du serveur
   httpServer.listen(PORT, '0.0.0.0', (err) => {
     if (err) throw err;
