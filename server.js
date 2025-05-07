@@ -1673,6 +1673,18 @@ app.prepare().then(() => {
     return handle(req, res);
   });
 
+  const { commitCache } = require('/script/commit-cache');
+
+// Set up periodic cache commits
+  const COMMIT_INTERVAL_MINUTES = 15;
+  const COMMIT_INTERVAL_MS = COMMIT_INTERVAL_MINUTES * 60 * 1000;
+
+  console.log(`Setting up automatic cache commits every ${COMMIT_INTERVAL_MINUTES} minutes`);
+  setInterval(commitCache, COMMIT_INTERVAL_MS);
+
+// Do an initial commit after 5 minutes of application startup
+  setTimeout(commitCache, 5 * 60 * 1000);
+
 
   const PORT = parseInt(process.env.PORT, 10) || 10000;
   // Démarrage du serveur
