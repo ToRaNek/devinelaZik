@@ -23,8 +23,8 @@ export default function handler(req, res) {
 
         // Configurer le proxy vers le serveur Socket.IO
         const target = process.env.NODE_ENV === 'production'
-            ? 'https://vercel-project-toraneks-projects.vercel.app'
-            : 'https://vercel-project-toraneks-projects.vercel.app';
+            ? 'https://devinela-zik-wait-for-it.onrender.com'
+            : 'https://devinela-zik-wait-for-it.onrender.com';
 
         // Options de proxy plus détaillées
         const options = {

@@ -1676,7 +1676,7 @@ app.prepare().then(() => {
   // Démarrage du serveur
   httpServer.listen(PORT, '0.0.0.0', (err) => {
     if (err) throw err;
-    console.log(`> Ready on https://vercel-project-toraneks-projects.vercel.app`);
+    console.log(`> Ready on https://devinela-zik-wait-for-it.onrender.com`);
     console.log('> Socket.IO server initialized');
   });
 });
