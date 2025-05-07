@@ -4,9 +4,9 @@
   "private": true,
   "scripts": {
     "postinstall": "prisma generate",
-    "dev": "next dev",
-    "build": "prisma db push --accept-data-loss && prisma generate && next build",
-    "start": "next start",
+    "dev":      "next dev",
+    "build":    "next build",
+    "start":    "prisma db push --accept-data-loss && prisma generate && next start",
     "setup-youtube": "node scripts/setup-youtube.js"
   },
   "dependencies": {
