@@ -5,9 +5,10 @@ services:
   - type: web
     name: devinela-zik-wait-for-it
     env: docker
+    repo: : https://github.com/ToRaNek/devinelaZik
     region: frankfurt
     plan: free  # Free plan selected
-    autoDeploy: true
+    autoDeploy: false
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/socket-health
     envVars:

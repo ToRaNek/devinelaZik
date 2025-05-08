@@ -1,0 +1,28 @@
+name: Conditional Render Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      - name: Get list of changed files
+        id: changed-files
+        run: |
+          echo "files=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | tr '\n' ' ')" >> $GITHUB_OUTPUT
+
+      - name: Conditional Deploy
+        if: >
+          !contains(steps.changed-files.outputs.files, 'cache/music-cache.json') ||
+          !contains(steps.changed-files.outputs.files, 'cache/music-cache.csv') ||
+          github.event.head_commit.modified | length > 2
+        run: |
+          curl -X POST https://api.render.com/deploy/srv-d0dpgd95pdvs739us6ig \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Accept: application/json"
