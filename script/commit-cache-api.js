@@ -6,12 +6,12 @@ const { Octokit } = require('@octokit/rest');
 const CACHE_FILES = [
     {
         localPath: '/app/host-cache/music-cache.json',
-        repoPath: 'host-cache/music-cache.json',
+        repoPath: 'cache/music-cache.json',
         description: 'JSON cache file'
     },
     {
         localPath: '/app/host-cache/music-cache.csv',
-        repoPath: 'host-cache/music-cache.csv',
+        repoPath: 'cache/music-cache.csv',
         description: 'CSV cache file'
     }
 ];
