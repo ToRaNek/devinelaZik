@@ -11,8 +11,11 @@ services:
     autoDeploy: false
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/socket-health
+    cache: none
     buildCommand: docker build --no-cache --build-arg GIT_AUTH_TOKEN=$GIT_AUTH_TOKEN --build-arg DATABASE_URL=$DATABASE_URL --build-arg DIRECT_URL=$DIRECT_URL -t app .
     envVars:
+      - key: GIT_AUTH_TOKEN
+        sync: false
       - key: NEXTAUTH_URL
         value: https://devinela-zik-wait-for-it.onrender.com
       - key: NEXTAUTH_SECRET
