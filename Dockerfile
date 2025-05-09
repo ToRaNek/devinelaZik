@@ -9,7 +9,6 @@ COPY package.json ./
 RUN mkdir -p prisma
 COPY prisma/schema.prisma ./prisma/
 RUN apt-get update -y && apt-get install -y openssl ca-certificates
-RUN npm install undici@^7
 
 # Base de données Supabase pour Prisma (utiliser ARG/ENV)
 ARG DATABASE_URL

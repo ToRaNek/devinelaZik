@@ -330,8 +330,16 @@ export default function EnhancedQuestionComponent({
                                             title="YouTube audio"
                                             allow="autoplay; encrypted-media"
                                             className="youtube-audio-iframe"
+                                            style={{
+                                                position: 'absolute',
+                                                width: 0,
+                                                height: 0,
+                                                border: 0,
+                                                opacity: 0,
+                                                pointerEvents: 'none'
+                                            }}
                                             onLoad={handleYouTubeLoad}
-                                        ></iframe>
+                                        />
                                         <div className="audio-controls">
                                             <div className="audio-progress">
                                                 <div
@@ -415,13 +423,15 @@ export default function EnhancedQuestionComponent({
                             </p>
                         )}
 
-                        {question.albumCover && (
+                        {!question.previewUrl && question.albumCover && (
                             <img
-                                src={question.albumCover || '/placeholder-album.png'}
+                                src={question.albumCover}
                                 alt="Album cover"
                                 className="question-album-cover"
+                                style={{ maxWidth: '150px', maxHeight: '150px' }}
                             />
                         )}
+
                         <div className="hint">
                             <p>Devinez le titre...</p>
                         </div>

@@ -608,7 +608,7 @@ app.prepare().then(() => {
               }else {
                 // all = on mélange tout
                 playerTracks = [
-                    ...(await getUserTopTracks(player.userId)),
+                  ...(await getUserTopTracks(player.userId)),
                   ...(await getUserSavedTracks(player.userId)),
                   ...(await getRecentlyPlayedTracks(player.userId))
                 ];
@@ -1396,6 +1396,12 @@ app.prepare().then(() => {
           const playerScore = gameData.scores.find(s => s.userId === userId);
           if (playerScore) {
             playerScore.score += points;
+
+            io.to(roomCode).emit('scoreUpdate', {
+              scores: gameData.scores,
+              userId: userId,
+              points: points
+            });
           }
 
           // Notify player of correct answer
@@ -1418,6 +1424,7 @@ app.prepare().then(() => {
             answer: currentQuestion.answer // Envoyer la bonne réponse immédiatement
           });
         }
+
 
         // Vérifier si tous les joueurs ont répondu
         const playersInRoom = activeRooms.get(roomCode)?.players || [];
@@ -1454,6 +1461,7 @@ app.prepare().then(() => {
         console.error('Error processing answer:', error);
       }
     });
+
 
     // When player leaves a room
     socket.on('leaveRoom', (roomCode) => {

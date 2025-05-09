@@ -41,6 +41,22 @@ export default function PartieComponent({ roomCode }) {
   // Stockage des joueurs qui ont déjà rejoint pour éviter les messages de jointure en double
   const [joinedPlayers, setJoinedPlayers] = useState(new Set());
 
+  const handleScoreUpdate = (data) => {
+    console.log('Score update:', data);
+
+    // Mettre à jour les scores des joueurs en temps réel
+    setPlayers(currentPlayers => {
+      // Créer une map des scores pour un accès rapide
+      const scoreMap = new Map(data.scores.map(s => [s.userId, s.score]));
+
+      // Mettre à jour les scores dans la liste des joueurs
+      return currentPlayers.map(player => ({
+        ...player,
+        score: scoreMap.has(player.userId) ? scoreMap.get(player.userId) : player.score
+      }));
+    });
+  };
+
   // Récupérer les données de la salle
   useEffect(() => {
     if (!roomCode || !session) return;
@@ -364,6 +380,7 @@ export default function PartieComponent({ roomCode }) {
     socket.on('message', handleMessage);
     socket.on('hostChanged', handleHostChanged);
     socket.on('error', handleError);
+    socket.on('scoreUpdate', handleScoreUpdate);
 
     // Timer interval pour le countdown principal (indépendant du timer local dans EnhancedQuestionComponent)
     const timerInterval = setInterval(() => {
@@ -389,6 +406,7 @@ export default function PartieComponent({ roomCode }) {
       socket.off('message', handleMessage);
       socket.off('hostChanged', handleHostChanged);
       socket.off('error', handleError);
+      socket.off('scoreUpdate', handleScoreUpdate);
       clearInterval(timerInterval);
     };
   }, [socket, isConnected, roomCode, session, players, room, totalRounds, reconnect, joinedPlayers, loadingMessage]);

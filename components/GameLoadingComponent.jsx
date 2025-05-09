@@ -50,82 +50,82 @@ export default function GameLoadingComponent({ loadingState }) {
             </div>
 
             <style jsx>{`
-        .game-loading-container {
-          background: white;
-          border-radius: 8px;
-          padding: 2rem;
-          text-align: center;
-          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-          max-width: 600px;
-          margin: 0 auto;
-        }
-        
-        .loading-spinner-large {
-          width: 80px;
-          height: 80px;
-          border: 8px solid #f3f3f3;
-          border-top: 8px solid #007bff;
-          border-radius: 50%;
-          margin: 1.5rem auto;
-          animation: spin 1s linear infinite;
-        }
-        
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-        
-        .loading-message {
-          font-size: 1.2rem;
-          margin: 1rem 0;
-        }
-        
-        .loading-progress-container {
-          margin: 1.5rem 0;
-        }
-        
-        .loading-progress-bar {
-          height: 10px;
-          background: #e9ecef;
-          border-radius: 5px;
-          overflow: hidden;
-          margin-bottom: 0.5rem;
-        }
-        
-        .loading-progress-fill {
-          height: 100%;
-          background: linear-gradient(90deg, #007bff, #6a11cb);
-          border-radius: 5px;
-          transition: width 0.3s ease;
-        }
-        
-        .loading-progress-text {
-          font-weight: bold;
-        }
-        
-        .loading-detail {
-          color: #6c757d;
-          font-size: 0.9rem;
-        }
-        
-        .loading-tips {
-          margin-top: 2rem;
-          padding: 1rem;
-          background: #f8f9fa;
-          border-radius: 8px;
-        }
-        
-        .loading-tips h3 {
-          font-size: 1rem;
-          color: #007bff;
-          margin-bottom: 0.5rem;
-        }
-        
-        .loading-tips p {
-          font-style: italic;
-          color: #495057;
-        }
-      `}</style>
+                .game-loading-container {
+                    background: white;
+                    border-radius: 8px;
+                    padding: 2rem;
+                    text-align: center;
+                    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+                    max-width: 600px;
+                    margin: 0 auto;
+                }
+
+                .loading-spinner-large {
+                    width: 80px;
+                    height: 80px;
+                    border: 8px solid #f3f3f3;
+                    border-top: 8px solid #007bff;
+                    border-radius: 50%;
+                    margin: 1.5rem auto;
+                    animation: spin 1s linear infinite;
+                }
+
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+
+                .loading-message {
+                    font-size: 1.2rem;
+                    margin: 1rem 0;
+                }
+
+                .loading-progress-container {
+                    margin: 1.5rem 0;
+                }
+
+                .loading-progress-bar {
+                    height: 10px;
+                    background: #e9ecef;
+                    border-radius: 5px;
+                    overflow: hidden;
+                    margin-bottom: 0.5rem;
+                }
+
+                .loading-progress-fill {
+                    height: 100%;
+                    background: linear-gradient(90deg, #007bff, #6a11cb);
+                    border-radius: 5px;
+                    transition: width 0.3s ease;
+                }
+
+                .loading-progress-text {
+                    font-weight: bold;
+                }
+
+                .loading-detail {
+                    color: #6c757d;
+                    font-size: 0.9rem;
+                }
+
+                .loading-tips {
+                    margin-top: 2rem;
+                    padding: 1rem;
+                    background: #f8f9fa;
+                    border-radius: 8px;
+                }
+
+                .loading-tips h3 {
+                    font-size: 1rem;
+                    color: #007bff;
+                    margin-bottom: 0.5rem;
+                }
+
+                .loading-tips p {
+                    font-style: italic;
+                    color: #495057;
+                }
+            `}</style>
         </div>
     );
 }

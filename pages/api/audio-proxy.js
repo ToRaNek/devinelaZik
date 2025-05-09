@@ -36,31 +36,6 @@ export default async function handler(req, res) {
         // Option 1: Redirection (plus simple, mais moins de contrôle)
         res.redirect(audioFormat.url);
 
-        // Option 2: Streaming du contenu (nécessite plus de ressources serveur)
-        /*
-        // Définir les headers de réponse
-        res.setHeader('Content-Type', audioFormat.mimeType);
-        res.setHeader('Content-Length', audioFormat.contentLength);
-        res.setHeader('Accept-Ranges', 'bytes');
-
-        // Créer un flux de la vidéo et le transférer à la réponse
-        const audioStream = ytdl(videoId, {
-          format: audioFormat,
-          range: req.headers.range,
-        });
-
-        // Gérer les erreurs de flux
-        audioStream.on('error', (err) => {
-          console.error('Stream error:', err);
-          if (!res.headersSent) {
-            res.status(500).json({ error: 'Streaming error' });
-          }
-        });
-
-        // Transférer le flux audio à la réponse
-        audioStream.pipe(res);
-        */
-
     } catch (error) {
         console.error('Error extracting YouTube audio:', error);
         return res.status(500).json({ error: 'Failed to extract audio stream' });
