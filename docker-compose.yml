@@ -4,7 +4,7 @@ services:
     volumes:
       - ./cache:/app/host-cache
     ports:
-      - "10000:10000"
+      - "3000:3000"
     environment:
       HOST_CACHE_DIR: "/app/host-cache"
       DATABASE_URL: "postgresql://postgres.jkdywcrnfdikvwdowffz:QCpVxQp2MRVX0o2X@aws-0-us-east-2.pooler.supabase.com:6543/postgres?pgbouncer=true"
@@ -28,6 +28,11 @@ services:
           cpus: '1.0'
           memory: 1G
     restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://0.0.0.0:3000/api/socket-health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 networks:
   app-network:
