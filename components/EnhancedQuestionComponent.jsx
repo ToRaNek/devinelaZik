@@ -1,4 +1,4 @@
-// Mise à jour pour components/EnhancedQuestionComponent.jsx
+// components/EnhancedQuestionComponent.jsx
 import { useState, useEffect, useRef } from 'react';
 import FreeTextAnswerComponent from './FreeTextAnswerComponent';
 
@@ -17,11 +17,67 @@ export default function EnhancedQuestionComponent({
     const [audioPlaying, setAudioPlaying] = useState(false);
     const audioRef = useRef(null);
 
+    // Références pour les lecteurs YouTube
+    const youtubePlayerRef = useRef(null);
+    const youtubePlayerArtistRef = useRef(null);
+    const youtubePlayerSongRef = useRef(null);
+
     // Nouveaux états pour gérer les différents types d'aperçu audio
     const [audioType, setAudioType] = useState(null); // 'youtube_embed', 'youtube_direct', 'spotify', etc.
 
     // Ne rien afficher si pas de question
     if (!question) return null;
+
+    // Effet pour charger l'API YouTube IFrame
+    useEffect(() => {
+        // Fonction pour charger l'API YouTube
+        const loadYouTubeAPI = () => {
+            // Vérifier si l'API est déjà chargée
+            if (window.YT && window.YT.Player) {
+                return;
+            }
+
+            // Fonction callback appelée quand l'API est prête
+            window.onYouTubeIframeAPIReady = () => {
+                console.log("YouTube API chargée avec succès");
+            };
+
+            // Charger le script YouTube API
+            const tag = document.createElement('script');
+            tag.src = 'https://www.youtube.com/iframe_api';
+            const firstScriptTag = document.getElementsByTagName('script')[0];
+            firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+        };
+
+        loadYouTubeAPI();
+    }, []);
+
+    // Fonction pour extraire l'ID vidéo YouTube d'une URL
+    const extractYoutubeVideoId = (url) => {
+        if (!url) return null;
+
+        // Formats possibles d'URL YouTube
+        const patterns = [
+            /(?:youtube\.com\/embed\/)([^?&\/]+)/i,           // embed URL
+            /(?:youtube\.com\/watch\?v=)([^?&]+)/i,           // watch URL
+            /(?:youtube\.com\/v\/)([^?&\/]+)/i,               // autre format
+            /(?:youtu\.be\/)([^?&\/]+)/i                      // URL courte
+        ];
+
+        for (const pattern of patterns) {
+            const match = url.match(pattern);
+            if (match && match[1]) {
+                return match[1];
+            }
+        }
+
+        // Si l'ID est déjà présent dans les métadonnées
+        if (question.previewMetadata && question.previewMetadata.videoId) {
+            return question.previewMetadata.videoId;
+        }
+
+        return null;
+    };
 
     // Mettre à jour le timer local quand le timer externe change
     useEffect(() => {
@@ -48,6 +104,7 @@ export default function EnhancedQuestionComponent({
             // Gérer l'audio direct seulement (pas YouTube embed)
             if (!question.previewUrl.includes('youtube.com/embed/') && audioRef.current) {
                 audioRef.current.src = question.previewUrl;
+                audioRef.current.volume = 0.1; // Définir le volume à 50%
                 audioRef.current.load();
                 audioRef.current.play().catch(e => {
                     console.error("Erreur de lecture audio:", e);
@@ -58,6 +115,108 @@ export default function EnhancedQuestionComponent({
             setAudioType(null);
         }
     }, [question]);
+
+    // Initialiser les lecteurs YouTube quand la question change
+    useEffect(() => {
+        // Fonction pour initialiser le lecteur YouTube
+        const initYoutubePlayer = (containerType) => {
+            // Vérifier si l'API YouTube est chargée
+            if (!window.YT || !window.YT.Player) {
+                console.log("YouTube API pas encore chargée");
+                return;
+            }
+
+            // Identifier l'ID de la vidéo YouTube
+            const videoId = extractYoutubeVideoId(question.previewUrl);
+            if (!videoId) {
+                console.error("Impossible d'extraire l'ID YouTube de l'URL:", question.previewUrl);
+                return;
+            }
+
+            // Déterminer quel conteneur et quelle référence utiliser
+            let containerId = '';
+            let playerRef = null;
+
+            if (containerType === 'artist') {
+                containerId = 'youtube-artist-container';
+                playerRef = youtubePlayerArtistRef;
+            } else {
+                containerId = 'youtube-song-container';
+                playerRef = youtubePlayerSongRef;
+            }
+
+            // Vérifier si le conteneur existe
+            const container = document.getElementById(containerId);
+            if (!container) {
+                console.error(`Conteneur #${containerId} non trouvé`);
+                return;
+            }
+
+            // Extraire les paramètres d'heure (start & end)
+            const urlParams = new URLSearchParams(
+                question.previewUrl.indexOf('?') > -1
+                    ? question.previewUrl.substring(question.previewUrl.indexOf('?'))
+                    : ''
+            );
+            const startTime = parseInt(urlParams.get('start')) || 0;
+            const endTime = parseInt(urlParams.get('end')) || startTime + 30;
+
+            // Si un player existe déjà, le détruire
+            if (playerRef.current) {
+                playerRef.current.destroy();
+            }
+
+            // Créer le nouveau lecteur YouTube
+            playerRef.current = new window.YT.Player(containerId, {
+                videoId: videoId,
+                height: '100',
+                width: '100%',
+                playerVars: {
+                    autoplay: 1,           // Lecture automatique
+                    controls: 0,           // Masquer les contrôles
+                    showinfo: 0,           // Masquer les informations
+                    modestbranding: 1,     // Logo YouTube discret
+                    start: startTime,      // Démarrer à ce moment
+                    end: endTime,          // Terminer à ce moment
+                    fs: 0,                 // Pas de mode plein écran
+                    rel: 0,                // Pas de vidéos liées
+                    disablekb: 1,          // Désactiver le clavier
+                    iv_load_policy: 3      // Masquer les annotations
+                },
+                events: {
+                    'onReady': (event) => {
+                        console.log(`Lecteur YouTube prêt (${containerType})`);
+                        event.target.setVolume(10); // Définir le volume à 50%
+                        event.target.playVideo();
+                        setAudioLoading(false);
+                    },
+                    'onStateChange': (event) => {
+                        if (event.data === window.YT.PlayerState.PLAYING) {
+                            setAudioPlaying(true);
+                        } else if (event.data === window.YT.PlayerState.PAUSED ||
+                            event.data === window.YT.PlayerState.ENDED) {
+                            setAudioPlaying(false);
+                        }
+                    },
+                    'onError': (event) => {
+                        console.error(`Erreur YouTube (${containerType}):`, event.data);
+                        setAudioError(true);
+                        setAudioLoading(false);
+                    }
+                }
+            });
+        };
+
+        // Initialiser le lecteur YouTube si nécessaire
+        if (question && question.previewUrl && audioType === 'youtube_embed') {
+            // Déterminer quel type de lecteur initialiser
+            if (question.type === 'artist') {
+                initYoutubePlayer('artist');
+            } else if (question.type === 'song') {
+                initYoutubePlayer('song');
+            }
+        }
+    }, [question, audioType]);
 
     // Animation continue du timer
     useEffect(() => {
@@ -129,6 +288,9 @@ export default function EnhancedQuestionComponent({
         audioRef.current.addEventListener('pause', handlePause);
         audioRef.current.addEventListener('timeupdate', handleTimeUpdate);
 
+        // Définir le volume à 50%
+        audioRef.current.volume = 0.1;
+
         // Nettoyage
         return () => {
             if (audioRef.current) {
@@ -141,10 +303,18 @@ export default function EnhancedQuestionComponent({
         };
     }, [audioRef.current, audioType, question]);
 
-    // Gestion du chargement de l'iframe YouTube
-    const handleYouTubeLoad = () => {
-        setAudioLoading(false);
-    };
+    // Nettoyage des lecteurs YouTube lors du démontage
+    useEffect(() => {
+        return () => {
+            // Détruire les lecteurs YouTube
+            if (youtubePlayerArtistRef.current) {
+                youtubePlayerArtistRef.current.destroy();
+            }
+            if (youtubePlayerSongRef.current) {
+                youtubePlayerSongRef.current.destroy();
+            }
+        };
+    }, []);
 
     const handleMultipleChoiceSubmit = () => {
         if (!selectedAnswer) return;
@@ -215,9 +385,9 @@ export default function EnhancedQuestionComponent({
                     ></div>
                 </div>
                 <div className="timer-counter">
-          <span className={`timer ${localTimer <= 10 ? 'timer-warning' : ''}`}>
-            {Math.ceil(localTimer)}s
-          </span>
+                  <span className={`timer ${localTimer <= 10 ? 'timer-warning' : ''}`}>
+                    {Math.ceil(localTimer)}s
+                  </span>
                 </div>
             </div>
 
@@ -225,18 +395,12 @@ export default function EnhancedQuestionComponent({
                 {question.type === 'artist' && question.previewUrl && (
                     <div className="audio-player">
                         {audioType === 'youtube_embed' ? (
-                            // YouTube embed avec UI améliorée
+                            // Remplacer l'iframe par un div avec ID pour l'API YouTube
                             <div className="youtube-audio-container">
                                 {audioLoading && (
                                     <div className="audio-loading-indicator">Chargement de l'audio...</div>
                                 )}
-                                <iframe
-                                    src={question.previewUrl}
-                                    title="YouTube audio"
-                                    allow="autoplay; encrypted-media"
-                                    className="youtube-audio-iframe"
-                                    onLoad={handleYouTubeLoad}
-                                ></iframe>
+                                <div id="youtube-artist-container" className="youtube-audio-iframe"></div>
                                 <div className="audio-controls">
                                     <div className="audio-progress">
                                         <div
@@ -320,26 +484,16 @@ export default function EnhancedQuestionComponent({
                         {question.previewUrl ? (
                             <>
                                 {audioType === 'youtube_embed' ? (
-                                    // YouTube embed avec UI améliorée
+                                    // Remplacer l'iframe par un div avec ID pour l'API YouTube
                                     <div className="youtube-audio-container">
                                         {audioLoading && (
                                             <div className="audio-loading-indicator">Chargement de l'audio...</div>
                                         )}
-                                        <iframe
-                                            src={question.previewUrl}
-                                            title="YouTube audio"
-                                            allow="autoplay; encrypted-media"
-                                            className="youtube-audio-iframe"
-                                            style={{
-                                                position: 'absolute',
-                                                width: 0,
-                                                height: 0,
-                                                border: 0,
-                                                opacity: 0,
-                                                pointerEvents: 'none'
-                                            }}
-                                            onLoad={handleYouTubeLoad}
-                                        />
+                                        <div id="youtube-song-container" className="youtube-audio-iframe" style={{
+                                            position: 'relative',
+                                            width: '100%',
+                                            height: '80px'
+                                        }}></div>
                                         <div className="audio-controls">
                                             <div className="audio-progress">
                                                 <div
